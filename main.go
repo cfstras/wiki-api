@@ -15,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cbroglie/mustache"
-	"github.com/jteeuwen/go-bindata"
 )
 
 var ErrorNotFound error = errors.New("Not Found")
@@ -36,8 +35,6 @@ var (
 )
 
 func init() {
-	_ = bindata.Config{}
-
 	TemplateIndexOf = string(data.MustAsset("indexOf.mustache"))
 }
 
