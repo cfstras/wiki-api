@@ -1,23 +1,50 @@
 language: go
+
+addons:
+  apt:
+    packages:
+      - wget
+      - ca-certificates
+      - cmake
+      - build-essential
+      - tar
+      - gzip
+      - libssh2-1-dev
+      - pkg-config
+
 before_install:
-- sudo apt-get update -qq
-- sudo apt-get install -y wget ca-certificates cmake build-essential
-- wget -q https://github.com/libgit2/libgit2/archive/v0.24.1.tar.gz && \
-  tar xzf v0.24.1.tar.gz && \
-  cd libgit* && \
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DTHREADSAFE=ON && \
-  make -j2 && \
-  make install
+  - pushd $HOME
+  - wget -q https://github.com/libgit2/libgit2/archive/v0.24.1.tar.gz
+  - tar xzf v0.24.1.tar.gz
+  - cd libgit*
+  - cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/libgit2/
+    -DTHREADSAFE=ON
+  - make -j2
+  - make install
+  - export PKG_CONFIG_PATH=$HOME/libgit2/lib/pkgconfig
+  - popd
+  - export PATH=$PATH:$GOPATH/bin
+# -DBUILD_SHARED_LIBS=OFF 
 
 script:
+#- export CGO_CFLAGS="-I$HOME/libgit2/include/"
+#- export CGO_LDFLAGS="-L$HOME/libgit2/lib/"
+
 - mkdir build
+- go get -v github.com/jteeuwen/go-bindata/...
 - go generate -v ./...
 - GOOS=linux GOARCH=amd64 go build -v -o build/wiki-api.x64
 
+# does not work because of libssh2...
+# --ldflags '-extldflags "-static"'
+
 deploy:
   provider: releases
+  skip_cleanup: true
   api_key:
     secure: cif47/VTlddn/a9R5gCfmuV0nFHZTOsD683K3MlBfW9j8s1vJ0SHGv9LqU64EIODPAw2g04wIbsByT37gCXyIVqFnE8bzjj8Yhk18g0rAUksjthnaRyxzKF/MWvkse3hDvSyjgfpzHiUhnqETYdHwGEk6CGWyQS0twyI7Jq26/HtjD+GPYdAwEvUcembb84mZKoNLBlVnK8HpPFt7ExcxpiGIwwEjFDmzJ1MU9FgQfq95Mn6ZOQgSj5QPnowR2DO0CcQDojZYjYPDr62BshXpRkabeqX4+gnzhUGHsOhaTNpVxR4VYWyA35PCgILJETQS7jldLBBmJSZXOevIJXtiNjJn3Y8ijxgNGOnUsvzl0y82AJ++IkN4nMkiJZGnHXSUA/faGLw5CXJo8Xb4Lt4jmYRxh/NSGJkHBqGVRoBzfFtX6GvY6gVLwUkagS1UiFk8oLytdjXKAkwkuIfTWPhQzK4sNTSiPC5PZQO78AvDOfkwQ4rygRAynkBc8TFv6wKOOCDpyEQfbRZXiNWl0kwXzNVPEiLkASDVE6+flDYaBKb6RP2XqXVm6l7HzQzApvqg53mTXW4j0IWhz5idMERMT1JVAN1GOH+vJrl8Fuw/Ji6RAT6lGSwGrioRRtp+1YXW2ip2PFatq7yWW04abCvX3at44cPoVvPQn6NPzpzySk=
-  file: build/wiki-api.x64
+  file:
+    - build/wiki-api.x64
+    - $HOME/libgit2/lib/libgit2.so
   on:
     repo: cfstras/wiki-api
