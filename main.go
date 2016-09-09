@@ -7,14 +7,15 @@ import (
 
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 
+	"github.com/cfstras/wiki-api/data"
 	"github.com/julienschmidt/httprouter"
 	"github.com/libgit2/git2go"
 	"github.com/pkg/errors"
 
 	"github.com/cbroglie/mustache"
+	"github.com/jteeuwen/go-bindata"
 )
 
 var ErrorNotFound error = errors.New("Not Found")
@@ -35,11 +36,9 @@ var (
 )
 
 func init() {
-	raw, err := ioutil.ReadFile("indexOf.mustache")
-	if err != nil {
-		panic("Could not find indexOf.mustache")
-	}
-	TemplateIndexOf = string(raw)
+	_ = bindata.Config{}
+
+	TemplateIndexOf = string(data.MustAsset("indexOf.mustache"))
 }
 
 func main() {
@@ -98,8 +97,8 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		}
 		files := ListDirCurrent(tree)
 
-		data := map[string]interface{}{"Files": files, "Path": path}
-		html, err := mustache.Render(TemplateIndexOf, data)
+		context := map[string]interface{}{"Files": files, "Path": path}
+		html, err := mustache.Render(TemplateIndexOf, context)
 		if err != nil {
 			http.Error(w, "Rendering template: "+err.Error(), 500)
 			return

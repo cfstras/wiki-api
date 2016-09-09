@@ -1,0 +1,19 @@
+<!doctype html>
+<head>
+	<title>Index of {{Path}}</title>
+</head>
+<h1>Index of {{Path}}</h1>
+<table>
+	<thead>
+		<td>Type</td>
+		<td>Name</td>
+		<td>sha</td>
+	</thead>
+	{{#Files}}
+	<tr>
+		<td>{{#IsDir}}D{{/IsDir}}{{^IsDir}}F{{/IsDir}}</td>
+		<td><a href="{{Name}}{{#IsDir}}/{{/IsDir}}">{{Name}}</a></td>
+		<td>{{ID}}</td>
+	</tr>
+	{{/Files}}
+</table>
