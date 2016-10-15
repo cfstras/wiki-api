@@ -1,0 +1,25 @@
+{
+	"ImportPath": "github.com/cfstras/wiki-api",
+	"GoVersion": "go1.7",
+	"GodepVersion": "v74",
+	"Deps": [
+		{
+			"ImportPath": "github.com/cbroglie/mustache",
+			"Rev": "422aa0d3b491c9ab8f74578f7e0098373ff51ad0"
+		},
+		{
+			"ImportPath": "github.com/julienschmidt/httprouter",
+			"Comment": "v1.1-34-gd8ff598",
+			"Rev": "d8ff598a019f2c7bad0980917a588193cf26666e"
+		},
+		{
+			"ImportPath": "github.com/libgit2/git2go",
+			"Rev": "e9668545c972870637b79670bcb532401353c3d6"
+		},
+		{
+			"ImportPath": "github.com/pkg/errors",
+			"Comment": "v0.8.0-1-g839d9e9",
+			"Rev": "839d9e913e063e28dfd0e6c7b7512793e0a48be9"
+		}
+	]
+}
