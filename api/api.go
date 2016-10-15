@@ -1,10 +1,10 @@
 package api
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"strings"
 
 	"github.com/cbroglie/mustache"
@@ -34,7 +34,10 @@ func init() {
 	TemplateIndexOf = string(data.MustAsset("indexOf.mustache"))
 }
 
-func Run(address, repoPath string) error {
+var debug bool
+
+func Run(address, repoPath string, doDebug bool) error {
+	debug = doDebug
 	var err error
 	repo, err = git.OpenRepository(repoPath)
 	if err != nil {
@@ -42,7 +45,9 @@ func Run(address, repoPath string) error {
 	}
 
 	router := httprouter.New()
+
 	router.GET("/*path", Index)
+	router.PUT("/*path", PutFile)
 
 	fmt.Println("Listening on", address)
 	return http.ListenAndServe(address, router)
@@ -51,8 +56,21 @@ func Run(address, repoPath string) error {
 func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	path := p.ByName("path")
 
-	entry, err := GetRepoPath(path)
+	if debug && strings.HasPrefix(path, "/debug/pprof/") {
+		//pprof.Handler(r.RequestURI).ServeHTTP(w, r)
+		pprof.Index(w, r)
+		return
+	}
 
+	tree, err := GetRootTree()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer tree.Free()
+	//defer fmt.Println("free tree %p", tree)
+
+	entry, err := GetRepoPath(tree, path)
 	if err != nil {
 		if err.Code == git.ErrNotFound {
 			http.NotFound(w, r)
@@ -96,56 +114,6 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	}
 }
 
-func GetRepoPath(path string) (*git.Object, *git.GitError) {
-	tree, errG := GetRootTree()
-	if errG != nil {
-		return nil, errG
-	}
-	if path == "/" || path == "" {
-		return &tree.Object, nil
-	}
-	entry, err := tree.EntryByPath(path[1:])
-
-	if err != nil {
-		if err.(*git.GitError).Code == git.ErrNotFound {
-			return nil, err.(*git.GitError)
-		}
-		return nil, err.(*git.GitError)
-	}
-	object, err := repo.Lookup(entry.Id)
-	if err != nil {
-		errG = err.(*git.GitError)
-	}
-	return object, errG
-}
-
-func ListDirCurrent(tree *git.Tree) []GitEntry {
-	num := tree.EntryCount()
-	list := make([]GitEntry, 0, num)
-
-	for i := uint64(0); i < num; i++ {
-		gitEntry := tree.EntryByIndex(i)
-		entry := GitEntry{
-			gitEntry.Name,
-			hex.EncodeToString(gitEntry.Id[:]),
-			gitEntry.Type == git.ObjectTree,
-			gitEntry}
-		list = append(list, entry)
-	}
-	return list
-}
-func GetRootTree() (*git.Tree, *git.GitError) {
-	head, err := repo.Head()
-	if err != nil {
-		return nil, err.(*git.GitError)
-	}
-	commit, err := head.Peel(git.ObjectTree)
-	if err != nil {
-		return nil, err.(*git.GitError)
-	}
-	tree, err := commit.AsTree()
-	if err != nil {
-		return nil, err.(*git.GitError)
-	}
-	return tree, nil
+func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	//TODO
 }

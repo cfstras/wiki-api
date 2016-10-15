@@ -12,11 +12,12 @@ build:
 	eval "$$(gimme 1.7)" && \
 	go get -v github.com/jteeuwen/go-bindata/... && \
 	go generate -v ./... && \
-	go get -d -v ./... && \
+	go get -d -t -v ./... && \
 	mkdir -p build && \
 	export CGO_CFLAGS=$$(pkg-config --cflags --static libgit2 libssh2) && \
 	export CGO_LDFLAGS="$$(pkg-config --libs --static libgit2 libssh2) \
 		-lgcrypt -lgpg-error" && \
+	go test -v ./... && \
 	go get -v \
 		--ldflags "-extldflags \"-static $$CGO_LDFLAGS\"" && \
 	go build -v -o build/wiki-api.x64 \

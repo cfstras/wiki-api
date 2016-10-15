@@ -68,7 +68,7 @@ func TestMain(m *testing.M) {
 	}
 
 	go func() {
-		err := api.Run(fmt.Sprintf(":%d", port), tmp+"wiki-test.git")
+		err := api.Run(fmt.Sprintf(":%d", port), tmp+"wiki-test.git", false)
 		no(err)
 	}()
 	// wait until ready

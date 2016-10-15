@@ -20,7 +20,7 @@ All template rendering (except for "Index of") should be done in the separate fr
 ```bash
 go get github.com/cfstras/wiki-api
 cd $GOPATH/github.com/cfstras/wiki-api && go generate -v ./...  # regenerate asset files if you changed them
-go get -v && wiki-api ~/path-to/wiki-data.git
+go get -v && wiki-api -debug ~/path-to/wiki-data.git
 ```
 
 ## API

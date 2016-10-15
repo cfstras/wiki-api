@@ -17,7 +17,9 @@ func main() {
 	}
 
 	var listenOn string
+	var debug bool
 	flag.StringVar(&listenOn, "l", ":3000", "Bind address")
+	flag.BoolVar(&debug, "debug", false, "Enable /debug/pprof")
 
 	flag.Parse()
 	if len(flag.Args()) != 1 {
@@ -26,5 +28,5 @@ func main() {
 	}
 	repoPath := flag.Args()[0]
 
-	fmt.Println(api.Run(listenOn, repoPath))
+	fmt.Println(api.Run(listenOn, repoPath, debug))
 }
