@@ -29,16 +29,16 @@ The API is planned as follows:
 - `GET /`  |  `GET /folder/subfolder/`  
 Returns an index-of listing, rendered in HTTPD style.
 
-- `GET /file.md`  |  `Get /folder/file.md`  
+- `GET /file.md`  |  `GET /folder/file.md`  
 Returns the file content.
 
-- `GET /file.md.json`  |  `Get /folder.json`  
+- `GET /file.md.json`  |  `GET /folder.json` | `GET /.json`  
 Returns file/folder information rendered as JSON, along with history entries.
 
-- `GET /file.md.history/`  |  `Get /folder.history/`  
+- `GET /file.md.history/`  |  `GET /folder.history/`  
 Returns index-of listing of file/folder history.
 
-- `GET /file.md.history/[12-]954abcf2` / `Get /folder.history/[12-]954abcf2/`  
+- `GET /file.md.history/[12-]954abcf2` / `GET /folder.history/[12-]954abcf2/`  
 Returns file/folder contents at commit-id. The number in front is used for sorting and
 can be omitted.
 

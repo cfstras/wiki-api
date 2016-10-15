@@ -1,10 +1,13 @@
 language: go
+version: tip
 sudo: required
 services:
   - docker
 
 script:
-  make
+- go get -v ./...
+- go test -v ./...
+- make
 
 deploy:
   provider: releases
@@ -14,4 +17,4 @@ deploy:
   file:
     - build/wiki-api.x64
   on:
-    repo: cfstras/wiki-api
+    tags: true
