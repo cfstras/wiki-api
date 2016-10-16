@@ -25,8 +25,6 @@ var port int
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	var ret int
-	defer os.Exit(ret)
 	no := func(err error) {
 		if err != nil {
 			fmt.Println(err)
@@ -43,7 +41,6 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}()
-	defer func() { no(os.RemoveAll(tmp)) }()
 
 	tmp += "/"
 	file, err := os.Open("../testdata.tar")
@@ -83,7 +80,9 @@ func TestMain(m *testing.M) {
 			break
 		}
 	}
-	ret = m.Run()
+	ret := m.Run()
+	no(os.RemoveAll(tmp))
+	os.Exit(ret)
 }
 
 type testCase struct {

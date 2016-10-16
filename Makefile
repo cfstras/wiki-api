@@ -14,7 +14,7 @@ _make_run: _make_docker_image
 	libgit2 \
 	bash -c 'while true; do sleep 10; done'
 
-CMD=sudo docker exec -it $$(cat _make_run) bash -l -c
+CMD=sudo docker exec -it $$(cat _make_run) bash -l -e -c
 
 _make_deps: _make_run
 	@rm _make_deps || :
