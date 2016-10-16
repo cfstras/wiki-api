@@ -48,10 +48,11 @@ The body of the request will be used verbatim as the file contents.
 
 Additional headers:  
 
-- `Auth: token` Token used for authorization
-- `Last-Id: <sha256>` (optional) the sha256 of the object to be replaced.
+- `Auth: token`: Token used for authorization
+- `Wiki-Last-Id: <sha256>` (optional): the sha256 of the object to be replaced.
   Can be used to verify that the file was not updated by somebody else.  
   Set to `null` to ensure the file does not exist before creating it.
+- `Wiki-Commit-Msg` (optional): Set a commit message describing the changes.
 
 Response codes:
 

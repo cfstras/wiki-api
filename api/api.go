@@ -146,7 +146,8 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	}
 
 	path := p.ByName("path")
-	lastId := r.Header.Get("Last-Id")
+	lastId := r.Header.Get("Wiki-Last-Id")
+	commitMsg := r.Header.Get("Wiki-Commit-Msg")
 
 	if strings.HasSuffix(path, ".json") {
 		http.Error(w, "Files cannot end in \".json\".", http.StatusConflict)
@@ -229,9 +230,8 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		Name:  "root",
 		When:  time.Now()}
 	committer := author
-	message := "Auto commit" //TODO add header
 
-	commitId, err := repo.CreateCommit("HEAD", author, committer, message, tree,
+	commitId, err := repo.CreateCommit("HEAD", author, committer, commitMsg, tree,
 		headCommit)
 	check("creating commit", http.StatusInternalServerError)
 	fmt.Fprintln(w, commitId)

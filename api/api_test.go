@@ -187,11 +187,11 @@ func TestPut(t *testing.T) {
 			"wow.", 200},
 		{"- .json forbidden", "/testfile-2.json", []string{},
 			"wow.", 409},
-		{"+ Last-Id null", "/otherfile.txt", []string{"Last-Id", "null"},
+		{"+ Last-Id null", "/otherfile.txt", []string{"Wiki-Last-Id", "null"},
 			"wow.", 200},
-		{"- Last-Id wrong", "/main.md", []string{"Last-Id", "01234abcde"},
+		{"- Last-Id wrong", "/main.md", []string{"Wiki-Last-Id", "01234abcde"},
 			"wow.", 409},
-		{"+ Last-Id right", "/main.md", []string{"Last-Id", "a58ad1f7cf02de3538fe4b6252dc049b9fdf698a"},
+		{"+ Last-Id right", "/main.md", []string{"Wiki-Last-Id", "a58ad1f7cf02de3538fe4b6252dc049b9fdf698a"},
 			"wow.", 200},
 	}
 
