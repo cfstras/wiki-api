@@ -1,10 +1,6 @@
 package api
 
-import (
-	"encoding/hex"
-
-	git "github.com/libgit2/git2go"
-)
+import git "github.com/libgit2/git2go"
 
 // GetRepoPath looks up an object a tree.
 // You will need to call object.Free() after usage.
@@ -37,7 +33,7 @@ func ListDirCurrent(tree *git.Tree) []GitEntry {
 		gitEntry := tree.EntryByIndex(i)
 		entry := GitEntry{
 			gitEntry.Name,
-			hex.EncodeToString(gitEntry.Id[:]),
+			gitEntry.Id.String(),
 			gitEntry.Type == git.ObjectTree,
 			gitEntry}
 		list = append(list, entry)

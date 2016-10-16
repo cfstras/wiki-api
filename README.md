@@ -56,7 +56,8 @@ Additional headers:
 Response codes:
 
 - 200 OK: everything was okay!
-- 409 Conflict: the `Last-Id` header did not match. Please re-fetch file information and merge changes.
+- 409 Conflict: the `Last-Id` header did not match. Please re-fetch file information and merge changes.  
+    Also occurs on other conflicts, e.g. creating a file ending in `.json`.
 - 410 Gone: a `Last-Id` header was supplied, but the file did not exist before.
 
 `TODO: DELETE, auth`

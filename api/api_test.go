@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,5 +168,62 @@ func TestGetListing(t *testing.T) {
 		t.Run(c.url, func(t *testing.T) {
 			testRequest(t, c)
 		})
+	}
+}
+
+type putTestCase struct {
+	testTitle    string
+	path         string
+	headers      []string
+	content      string
+	responseCode int
+}
+
+func TestPut(t *testing.T) {
+	cases := []putTestCase{
+		{"+ Regular-1", "/testfile-1.md", []string{},
+			"#TEST CONTENT\nray-yay-yay-yay", 200},
+		{"+ Regular-2", "/testfile-1.txt", []string{},
+			"wow.", 200},
+		{"- .json forbidden", "/testfile-2.json", []string{},
+			"wow.", 409},
+		{"+ Last-Id null", "/otherfile.txt", []string{"Last-Id", "null"},
+			"wow.", 200},
+		{"- Last-Id wrong", "/main.md", []string{"Last-Id", "01234abcde"},
+			"wow.", 409},
+		{"+ Last-Id right", "/main.md", []string{"Last-Id", "a58ad1f7cf02de3538fe4b6252dc049b9fdf698a"},
+			"wow.", 409},
+	}
+
+	for _, c := range cases {
+		t.Run(c.testTitle, func(t *testing.T) {
+			testPutRequest(t, c)
+		})
+	}
+}
+
+// testPutRequest calls PUT on a URL and verifies the result matches what is
+// expected.
+func testPutRequest(t *testing.T, c putTestCase) {
+	req, err := http.NewRequest(http.MethodPut,
+		fmt.Sprintf("http://127.0.0.1:%d%s", port, c.path),
+		strings.NewReader(c.content))
+	assert.NoError(t, err)
+	for i := 0; i < len(c.headers); i += 2 {
+		req.Header.Add(c.headers[i], c.headers[i+1])
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	//body, err := ioutil.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	//assert.Equal(t, "", string(body))
+	assert.Equal(t, c.responseCode, resp.StatusCode)
+
+	if c.responseCode == 200 {
+		checkCase := testCase{c.path, c.content}
+		testRequest(t, checkCase)
 	}
 }

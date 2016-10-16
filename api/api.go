@@ -115,5 +115,54 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 }
 
 func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	//TODO
+	path := p.ByName("path")
+
+	lastId := r.Header.Get("Last-Id")
+
+	tree, err := GetRootTree()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer tree.Free()
+
+	oldEntry, err := GetRepoPath(tree, path)
+	if err != nil {
+		if err.Code == git.ErrNotFound {
+			oldEntry = nil
+		}
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	if oldEntry != nil {
+		switch oldEntry.Type() {
+		case git.ObjectTree:
+			http.Error(w, "Specified path exists and is a directory.", 409)
+			return
+		case git.ObjectBlob:
+			switch lastId {
+			case "":
+				// no checks to perform
+			case "null":
+				http.Error(w, "lastId was null but specified path exists.", 409)
+				return
+			default:
+				if lastId != oldEntry.Id().String() {
+					http.Error(w, "lastId did not match existing entry.", 409)
+					return
+				}
+			}
+		default:
+			http.Error(w, "Unknown old entry: "+oldEntry.Type().String(), 500)
+			return
+		}
+	} else {
+		if lastId != "" && lastId != "null" {
+			http.Error(w, "lastId specified but specified path does not exist.", 410)
+			return
+		}
+	}
+	// all checks okay, add, lock, and commit!
+	//TODO implement
 }
