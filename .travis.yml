@@ -5,7 +5,13 @@ services:
   - docker
 
 script:
-- make
+- make _make_docker_image
+- make _make_run
+- make _make_deps
+- make _make_download
+- make test
+- make build
+- make stop
 
 deploy:
   provider: releases

@@ -31,3 +31,9 @@ RUN wget -q http://curl.haxx.se/download/curl-7.24.0.tar.lzma && \
 
 #ENV PKG_CONFIG_PATH=/root/libgit2/lib/pkgconfig:/root/curl/lib/pkgconfig
 ENV PKG_CONFIG_PATH=/root/libgit2/lib/pkgconfig
+
+RUN gimme 1.7 >> /etc/profile
+
+RUN echo 'export CGO_CFLAGS="$(pkg-config --cflags --static libgit2 libssh2)" && \
+	export CGO_LDFLAGS="$(pkg-config --libs --static libgit2 libssh2) \
+		-lgcrypt -lgpg-error"' >> /etc/profile
