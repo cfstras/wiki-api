@@ -181,9 +181,9 @@ type putTestCase struct {
 
 func TestPut(t *testing.T) {
 	cases := []putTestCase{
-		{"+ Regular-1", "/testfile-1.md", []string{},
+		{"+ Regular 1", "/testfile-1.md", []string{},
 			"#TEST CONTENT\nray-yay-yay-yay", 200},
-		{"+ Regular-2", "/testfile-1.txt", []string{},
+		{"+ Regular 2", "/testfile-1.txt", []string{},
 			"wow.", 200},
 		{"- .json forbidden", "/testfile-2.json", []string{},
 			"wow.", 409},
@@ -193,6 +193,19 @@ func TestPut(t *testing.T) {
 			"wow.", 409},
 		{"+ Last-Id right", "/main.md", []string{"Wiki-Last-Id", "a58ad1f7cf02de3538fe4b6252dc049b9fdf698a"},
 			"wow.", 200},
+
+		{"+ folders", "/foo/bar/baz/b.md", []string{},
+			"Test 2", 200},
+		{"+ Existing Folder", "/new_folder/test.txt", []string{},
+			"Test", 200},
+		{"+ New Folder", "/new_folder/test.txt", []string{},
+			"Test", 200},
+		{"+ New Folder With Spaces", "/new folder/test.txt", []string{},
+			"Test", 200},
+		{"- Bad Folder 1", "/foo/../test.txt", []string{},
+			"Test 2", 400},
+		{"- Bad Folder 2", "/new folder/../test.txt", []string{},
+			"Test 2", 400},
 	}
 
 	for _, c := range cases {
