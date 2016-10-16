@@ -1,11 +1,16 @@
 package api
 
 import (
-	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/pprof"
+	"runtime"
 	"strings"
+	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/cbroglie/mustache"
 	"github.com/cfstras/wiki-api/data"
@@ -64,7 +69,7 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 	tree, err := GetRootTree()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, "Could not get tree: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer tree.Free()
@@ -76,20 +81,21 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), 500)
+		http.Error(w, "Could not get path: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	switch entry.Type() {
 	case git.ObjectTree:
 		if !strings.HasSuffix(path, "/") {
-			http.Redirect(w, r, path+"/", 301)
+			http.Redirect(w, r, path+"/", http.StatusMovedPermanently)
 			return
 		}
 
 		tree, err := entry.AsTree()
 		if err != nil {
-			http.Error(w, "Getting tree "+path+": "+err.Error(), 500)
+			http.Error(w, "Getting tree "+path+": "+err.Error(),
+				http.StatusInternalServerError)
 			return
 		}
 		files := ListDirCurrent(tree)
@@ -97,7 +103,8 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		context := map[string]interface{}{"Files": files, "Path": path}
 		html, err := mustache.Render(TemplateIndexOf, context)
 		if err != nil {
-			http.Error(w, "Rendering template: "+err.Error(), 500)
+			http.Error(w, "Rendering template: "+err.Error(),
+				http.StatusInternalServerError)
 			return
 		}
 		w.Write([]byte(html))
@@ -105,64 +112,128 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	case git.ObjectBlob:
 		blob, err := entry.AsBlob()
 		if err != nil {
-			http.Error(w, "Getting blob "+path+": "+err.Error(), 500)
+			http.Error(w, "Getting blob "+path+": "+err.Error(),
+				http.StatusInternalServerError)
 			return
 		}
 		w.Write(blob.Contents())
 	default:
-		http.Error(w, "Unknown entry: "+entry.Type().String(), 500)
+		http.Error(w, "Unknown entry: "+entry.Type().String(),
+			http.StatusInternalServerError)
+	}
+}
+
+func httpErrorOnPanic(w http.ResponseWriter, errorCode *int) {
+	if err := recover(); err != nil {
+		if _, ok := err.(runtime.Error); ok {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			log.Printf("in request: %+v", errors.WithStack(err.(error)))
+		} else {
+			http.Error(w, err.(error).Error(), *errorCode)
+		}
 	}
 }
 
 func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	path := p.ByName("path")
+	var currentErrorCode int
+	var err error
+	defer httpErrorOnPanic(w, &currentErrorCode)
+	check := func(status string, errorCode int) {
+		if err != nil {
+			currentErrorCode = errorCode
+			panic(errors.WithMessage(err, "Error "+status))
+		}
+	}
 
+	path := p.ByName("path")
 	lastId := r.Header.Get("Last-Id")
 
-	tree, err := GetRootTree()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
+	if strings.HasSuffix(path, ".json") {
+		http.Error(w, "Files cannot end in \".json\".", http.StatusConflict)
 		return
 	}
-	defer tree.Free()
 
-	oldEntry, err := GetRepoPath(tree, path)
-	if err != nil {
-		if err.Code == git.ErrNotFound {
-			oldEntry = nil
-		}
-		http.Error(w, err.Error(), 500)
+	head, err := repo.Head()
+	check("getting HEAD", http.StatusInternalServerError)
+	headCommitObject, err := head.Peel(git.ObjectCommit)
+	check("getting HEAD", http.StatusInternalServerError)
+	headCommit, err := headCommitObject.AsCommit()
+	check("getting HEAD", http.StatusInternalServerError)
+
+	oldRootTree, errG := GetTreeFromRef(head)
+	check("getting HEAD tree", http.StatusInternalServerError)
+	defer oldRootTree.Free()
+
+	oldEntry, errG := GetRepoPath(oldRootTree, path)
+	if errG != nil && errG.Code == git.ErrNotFound {
+		oldEntry = nil
+	} else if errG != nil {
+		http.Error(w, "Could not get path: "+errG.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if oldEntry != nil {
 		switch oldEntry.Type() {
 		case git.ObjectTree:
-			http.Error(w, "Specified path exists and is a directory.", 409)
+			http.Error(w, "Specified path exists and is a directory.",
+				http.StatusConflict)
 			return
 		case git.ObjectBlob:
 			switch lastId {
 			case "":
 				// no checks to perform
 			case "null":
-				http.Error(w, "lastId was null but specified path exists.", 409)
+				http.Error(w, "lastId was null but specified path exists.",
+					http.StatusConflict)
 				return
 			default:
 				if lastId != oldEntry.Id().String() {
-					http.Error(w, "lastId did not match existing entry.", 409)
+					http.Error(w, "lastId did not match existing entry.",
+						http.StatusConflict)
 					return
 				}
 			}
 		default:
-			http.Error(w, "Unknown old entry: "+oldEntry.Type().String(), 500)
+			http.Error(w, "Unknown old entry: "+oldEntry.Type().String(),
+				http.StatusInternalServerError)
 			return
 		}
 	} else {
 		if lastId != "" && lastId != "null" {
-			http.Error(w, "lastId specified but specified path does not exist.", 410)
+			http.Error(w, "lastId specified but specified path does not exist.",
+				http.StatusGone)
 			return
 		}
 	}
 	// all checks okay, add, lock, and commit!
-	//TODO implement
+
+	//TODO lock
+	path = path[1:]
+
+	content, err := ioutil.ReadAll(r.Body)
+	check("receiving request", http.StatusInternalServerError)
+	blobId, err := repo.CreateBlobFromBuffer(content)
+	check("writing request blob", http.StatusInternalServerError)
+	treeBuilder, err := repo.TreeBuilderFromTree(oldRootTree)
+	check("creating new tree object", http.StatusInternalServerError)
+	defer treeBuilder.Free()
+	err = treeBuilder.Insert(path, blobId, git.FilemodeBlob)
+	check("adding file to tree", http.StatusInternalServerError)
+	treeId, err := treeBuilder.Write()
+	check("writing new tree", http.StatusInternalServerError)
+	tree, err := repo.LookupTree(treeId)
+	check("getting new tree", http.StatusInternalServerError)
+
+	author := &git.Signature{ //TODO add user info
+		Email: "root@localhost",
+		Name:  "root",
+		When:  time.Now()}
+	committer := author
+	message := "Auto commit" //TODO add header
+
+	commitId, err := repo.CreateCommit("HEAD", author, committer, message, tree,
+		headCommit)
+	check("creating commit", http.StatusInternalServerError)
+	fmt.Fprintln(w, commitId)
+	return
 }

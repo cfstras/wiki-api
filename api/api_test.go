@@ -192,7 +192,7 @@ func TestPut(t *testing.T) {
 		{"- Last-Id wrong", "/main.md", []string{"Last-Id", "01234abcde"},
 			"wow.", 409},
 		{"+ Last-Id right", "/main.md", []string{"Last-Id", "a58ad1f7cf02de3538fe4b6252dc049b9fdf698a"},
-			"wow.", 409},
+			"wow.", 200},
 	}
 
 	for _, c := range cases {
@@ -217,10 +217,12 @@ func testPutRequest(t *testing.T, c putTestCase) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	//body, err := ioutil.ReadAll(resp.Body)
-	assert.NoError(t, err)
+	bodyB, err := ioutil.ReadAll(resp.Body)
+	body := string(bodyB)
+	assert.NoError(t, err, body)
+
 	//assert.Equal(t, "", string(body))
-	assert.Equal(t, c.responseCode, resp.StatusCode)
+	assert.Equal(t, c.responseCode, resp.StatusCode, body)
 
 	if c.responseCode == 200 {
 		checkCase := testCase{c.path, c.content}

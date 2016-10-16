@@ -48,11 +48,16 @@ func GetRootTree() (*git.Tree, *git.GitError) {
 	if err != nil {
 		return nil, err.(*git.GitError)
 	}
-	commit, err := head.Peel(git.ObjectTree)
+	return GetTreeFromRef(head)
+}
+
+// GetTreeFromRef returns the tree associated with a reference
+func GetTreeFromRef(ref *git.Reference) (*git.Tree, *git.GitError) {
+	treeOb, err := ref.Peel(git.ObjectTree)
 	if err != nil {
 		return nil, err.(*git.GitError)
 	}
-	tree, err := commit.AsTree()
+	tree, err := treeOb.AsTree()
 	if err != nil {
 		return nil, err.(*git.GitError)
 	}
