@@ -1,9 +1,23 @@
 <!doctype html>
 <head>
 	<title>Index of {{Path}}</title>
+	<style>
+		.files td {
+			padding: 0em 0.5em;
+		}
+		.files tbody {
+			font-family: monospace;
+		}
+		.files thead td {
+			background-color: #ddd;
+		}
+		.files tbody tr:nth-child(2n) td {
+			background-color: #eee;
+		}
+	</style>
 </head>
 <h1>Index of {{Path}}</h1>
-<table>
+<table class="files">
 	<thead>
 		<td>Type</td>
 		<td>Name</td>
