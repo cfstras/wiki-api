@@ -4,24 +4,17 @@ import git "github.com/libgit2/git2go"
 
 // GetRepoPath looks up an object a tree.
 // You will need to call object.Free() after usage.
-func GetRepoPath(tree *git.Tree, path string) (*git.Object, *git.GitError) {
+func GetRepoPath(tree *git.Tree, path string) (*git.Object, error) {
 	if path == "/" || path == "" {
 		return &tree.Object, nil
 	}
 	entry, err := tree.EntryByPath(path[1:])
+	if err != nil {
+		return nil, err
+	}
 
-	if err != nil {
-		if err.(*git.GitError).Code == git.ErrNotFound {
-			return nil, err.(*git.GitError)
-		}
-		return nil, err.(*git.GitError)
-	}
 	object, err := repo.Lookup(entry.Id)
-	var errG *git.GitError
-	if err != nil {
-		errG = err.(*git.GitError)
-	}
-	return object, errG
+	return object, err
 }
 
 // ListDirCurrent lists entries in a tree object and returns an array.
@@ -43,23 +36,23 @@ func ListDirCurrent(tree *git.Tree) []GitEntry {
 
 // GetRootTree returns a tree object for the root directory of HEAD.
 // You will need to call tree.Free() after usage.
-func GetRootTree() (*git.Tree, *git.GitError) {
+func GetRootTree() (*git.Tree, error) {
 	head, err := repo.Head()
 	if err != nil {
-		return nil, err.(*git.GitError)
+		return nil, err
 	}
 	return GetTreeFromRef(head)
 }
 
 // GetTreeFromRef returns the tree associated with a reference
-func GetTreeFromRef(ref *git.Reference) (*git.Tree, *git.GitError) {
+func GetTreeFromRef(ref *git.Reference) (*git.Tree, error) {
 	treeOb, err := ref.Peel(git.ObjectTree)
 	if err != nil {
-		return nil, err.(*git.GitError)
+		return nil, err
 	}
 	tree, err := treeOb.AsTree()
 	if err != nil {
-		return nil, err.(*git.GitError)
+		return nil, err
 	}
 	return tree, nil
 }

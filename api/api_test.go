@@ -86,7 +86,8 @@ func TestMain(m *testing.M) {
 }
 
 type testCase struct {
-	url, response string
+	url, expected     string
+	transformResponse func(string) string
 }
 
 // testRequest calls a URL and verifies the result matches what is expected.
@@ -96,15 +97,20 @@ func testRequest(t *testing.T, c testCase) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	bodyB, err := ioutil.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	assert.Equal(t, c.response, string(body))
+
+	body := string(bodyB)
+	if c.transformResponse != nil {
+		body = c.transformResponse(body)
+	}
+	assert.Equal(t, c.expected, body)
 }
 
 // TestGetFile verifies that files from the repository are correctly returned.
 func TestGetFile(t *testing.T) {
 	cases := []testCase{
-		{"/main.md", `# Main
+		{url: "/main.md", expected: `# Main
 
 Welcome to the best Wiki _ever_ to be created!
 
@@ -112,9 +118,9 @@ Welcome to the best Wiki _ever_ to be created!
 
 **lol**.
 `},
-		{"/foo/foo.txt", "foo.txt\n"},
-		{"/foo/bar/a.md", "foo/bar/a.md\n"},
-		{"/foo/bar/baz/boo/x.md", "foo/bar/baz/boo/x.md\n"},
+		{url: "/foo/foo.txt", expected: "foo.txt\n"},
+		{url: "/foo/bar/a.md", expected: "foo/bar/a.md\n"},
+		{url: "/foo/bar/baz/boo/x.md", expected: "foo/bar/baz/boo/x.md\n"},
 	}
 
 	for _, c := range cases {
@@ -141,7 +147,7 @@ func TestGetListing(t *testing.T) {
 			{"IsDir": false, "Name": "main.md", "ID": "a58ad1f7cf02de3538fe4b6252dc049b9fdf698a"},
 		}})
 	assert.NoError(t, err)
-	cases = append(cases, testCase{"/", res})
+	cases = append(cases, testCase{url: "/", expected: res})
 
 	res, err = template.Render(map[string]interface{}{
 		"Path": "/foo/",
@@ -151,8 +157,8 @@ func TestGetListing(t *testing.T) {
 			{"IsDir": false, "Name": "foo.txt", "ID": "7c6ded14ecffa0341f8dc68fb674d4ae26d34644"},
 		}})
 	assert.NoError(t, err)
-	cases = append(cases, testCase{"/foo", res})
-	cases = append(cases, testCase{"/foo/", res})
+	cases = append(cases, testCase{url: "/foo", expected: res})
+	cases = append(cases, testCase{url: "/foo/", expected: res})
 
 	res, err = template.Render(map[string]interface{}{
 		"Path": "/foo/bar/",
@@ -162,8 +168,8 @@ func TestGetListing(t *testing.T) {
 			{"IsDir": true, "Name": "baz", "ID": "21be1b42bce2d050160f7a9b46ed8946de68e37e"},
 		}})
 	assert.NoError(t, err)
-	cases = append(cases, testCase{"/foo/bar", res})
-	cases = append(cases, testCase{"/foo/bar/", res})
+	cases = append(cases, testCase{url: "/foo/bar", expected: res})
+	cases = append(cases, testCase{url: "/foo/bar/", expected: res})
 
 	for _, c := range cases {
 		t.Run(c.url, func(t *testing.T) {
@@ -239,7 +245,7 @@ func testPutRequest(t *testing.T, c putTestCase) {
 	assert.Equal(t, c.responseCode, resp.StatusCode, body)
 
 	if c.responseCode == 200 {
-		checkCase := testCase{c.path, c.content}
+		checkCase := testCase{url: c.path, expected: c.content}
 		testRequest(t, checkCase)
 	}
 }

@@ -54,12 +54,15 @@ Additional headers:
   Set to `null` to ensure the file does not exist before creating it.
 - `Wiki-Commit-Msg` (optional): Set a commit message describing the changes.
 
+Responds with the Commit ID of the newly generated commit, or an error message.
+
 Response codes:
 
 - 200 OK: everything was okay!
 - 409 Conflict: the `Last-Id` header did not match. Please re-fetch file information and merge changes.  
     Also occurs on other conflicts, e.g. creating a file ending in `.json`.
 - 410 Gone: a `Last-Id` header was supplied, but the file did not exist before.
+
 
 `TODO: DELETE, auth`
 
