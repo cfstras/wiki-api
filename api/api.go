@@ -100,6 +100,10 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		}
 		files := ListDirCurrent(tree)
 
+		// we only want to do that for the output, not the json and stuff
+		if path != "/" {
+			files = append([]GitEntry{{IsDir: true, Name: ".."}}, files...)
+		}
 		context := map[string]interface{}{"Files": files, "Path": path}
 		html, err := mustache.Render(TemplateIndexOf, context)
 		if err != nil {
@@ -134,18 +138,36 @@ func httpErrorOnPanic(w http.ResponseWriter, errorCode *int) {
 	}
 }
 
+// checkPath checks that a path makes sense.
+// expects
+func checkPath(path string) (string, error) {
+	if len(path) < 1 || path[0] != '/' {
+		return "", errors.New("invalid path: has to start with '/'")
+	}
+	pathElements := strings.Split(path[1:], "/")
+	for _, el := range pathElements {
+		if el == "." || el == ".." {
+			return "", errors.New("invalid path: cannot contain '.' or '..' elements")
+		}
+	}
+	return path, nil
+}
+
 func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	var currentErrorCode int
-	var err error
 	defer httpErrorOnPanic(w, &currentErrorCode)
-	check := func(status string, errorCode int) {
+	check := func(err error, status string, errorCode int) {
 		if err != nil {
 			currentErrorCode = errorCode
 			panic(errors.WithMessage(err, "Error "+status))
 		}
 	}
+	var err error
 
 	path := p.ByName("path")
+	path, err = checkPath(path)
+	check(err, "in supplied path", http.StatusBadRequest)
+
 	lastId := r.Header.Get("Wiki-Last-Id")
 	commitMsg := r.Header.Get("Wiki-Commit-Msg")
 
@@ -155,14 +177,14 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	}
 
 	head, err := repo.Head()
-	check("getting HEAD", http.StatusInternalServerError)
+	check(err, "getting HEAD", http.StatusInternalServerError)
 	headCommitObject, err := head.Peel(git.ObjectCommit)
-	check("getting HEAD", http.StatusInternalServerError)
+	check(err, "getting HEAD", http.StatusInternalServerError)
 	headCommit, err := headCommitObject.AsCommit()
-	check("getting HEAD", http.StatusInternalServerError)
+	check(err, "getting HEAD", http.StatusInternalServerError)
 
 	oldRootTree, errG := GetTreeFromRef(head)
-	check("getting HEAD tree", http.StatusInternalServerError)
+	check(err, "getting HEAD tree", http.StatusInternalServerError)
 	defer oldRootTree.Free()
 
 	oldEntry, errG := GetRepoPath(oldRootTree, path)
@@ -209,21 +231,29 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// all checks okay, add, lock, and commit!
 
 	//TODO lock
-	path = path[1:]
 
 	content, err := ioutil.ReadAll(r.Body)
-	check("receiving request", http.StatusInternalServerError)
+	check(err, "receiving request", http.StatusInternalServerError)
 	blobId, err := repo.CreateBlobFromBuffer(content)
-	check("writing request blob", http.StatusInternalServerError)
-	treeBuilder, err := repo.TreeBuilderFromTree(oldRootTree)
-	check("creating new tree object", http.StatusInternalServerError)
-	defer treeBuilder.Free()
-	err = treeBuilder.Insert(path, blobId, git.FilemodeBlob)
-	check("adding file to tree", http.StatusInternalServerError)
-	treeId, err := treeBuilder.Write()
-	check("writing new tree", http.StatusInternalServerError)
+	check(err, "writing request blob", http.StatusInternalServerError)
+	content = nil
+
+	index, err := git.NewIndex()
+	check(err, "creating index", http.StatusInternalServerError)
+	check(index.ReadTree(oldRootTree), "Adding old files to index",
+		http.StatusInternalServerError)
+
+	entry := git.IndexEntry{
+		Mode: git.FilemodeBlob,
+		Size: uint32(len(content)),
+		Id:   blobId,
+		Path: path[1:], // without / at the beginning
+	}
+	check(index.Add(&entry), "adding file to index", http.StatusInternalServerError)
+	treeId, err := index.WriteTreeTo(repo)
+	check(err, "writing new tree", http.StatusInternalServerError)
 	tree, err := repo.LookupTree(treeId)
-	check("getting new tree", http.StatusInternalServerError)
+	check(err, "getting new tree", http.StatusInternalServerError)
 
 	author := &git.Signature{ //TODO add user info
 		Email: "root@localhost",
@@ -233,7 +263,7 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 	commitId, err := repo.CreateCommit("HEAD", author, committer, commitMsg, tree,
 		headCommit)
-	check("creating commit", http.StatusInternalServerError)
+	check(err, "creating commit", http.StatusInternalServerError)
 	fmt.Fprintln(w, commitId)
 	return
 }

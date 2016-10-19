@@ -146,6 +146,7 @@ func TestGetListing(t *testing.T) {
 	res, err = template.Render(map[string]interface{}{
 		"Path": "/foo/",
 		"Files": []map[string]interface{}{
+			{"IsDir": true, "Name": ".."},
 			{"IsDir": true, "Name": "bar", "ID": "f89102e8f7d3d0f2f4168b3ad300b902a3e90db6"},
 			{"IsDir": false, "Name": "foo.txt", "ID": "7c6ded14ecffa0341f8dc68fb674d4ae26d34644"},
 		}})
@@ -156,6 +157,7 @@ func TestGetListing(t *testing.T) {
 	res, err = template.Render(map[string]interface{}{
 		"Path": "/foo/bar/",
 		"Files": []map[string]interface{}{
+			{"IsDir": true, "Name": ".."},
 			{"IsDir": false, "Name": "a.md", "ID": "29f793097574c57c748dbf83b25710bfa90f0505"},
 			{"IsDir": true, "Name": "baz", "ID": "21be1b42bce2d050160f7a9b46ed8946de68e37e"},
 		}})
