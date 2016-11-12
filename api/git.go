@@ -26,7 +26,7 @@ func ListDirCurrent(tree *git.Tree) []GitEntry {
 		gitEntry := tree.EntryByIndex(i)
 		entry := GitEntry{
 			gitEntry.Name,
-			gitEntry.Id.String(),
+			(*Oid)(gitEntry.Id),
 			gitEntry.Type == git.ObjectTree,
 			gitEntry}
 		list = append(list, entry)
@@ -44,6 +44,16 @@ func GetRootTree() (*git.Tree, error) {
 	return GetTreeFromRef(head)
 }
 
+// GetRootCommit returns a commit object for HEAD.
+// You will need to call commit.Free() after usage.
+func GetRootCommit() (*git.Commit, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return nil, err
+	}
+	return GetCommitFromRef(head)
+}
+
 // GetTreeFromRef returns the tree associated with a reference
 func GetTreeFromRef(ref *git.Reference) (*git.Tree, error) {
 	treeOb, err := ref.Peel(git.ObjectTree)
@@ -55,4 +65,17 @@ func GetTreeFromRef(ref *git.Reference) (*git.Tree, error) {
 		return nil, err
 	}
 	return tree, nil
+}
+
+// GetTreeFromRef returns the commit associated with a reference
+func GetCommitFromRef(ref *git.Reference) (*git.Commit, error) {
+	commitOb, err := ref.Peel(git.ObjectCommit)
+	if err != nil {
+		return nil, err
+	}
+	commit, err := commitOb.AsCommit()
+	if err != nil {
+		return nil, err
+	}
+	return commit, nil
 }

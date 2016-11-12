@@ -24,7 +24,7 @@ go get -v && wiki-api -debug ~/path-to/wiki-data.git
 ```
 
 ## API
-The API is planned as follows:
+The API is as follows:
 
 ### `GET /`  |  `GET /folder/subfolder/`  
 Returns an index-of listing, rendered in HTTPD style.
@@ -32,13 +32,13 @@ Returns an index-of listing, rendered in HTTPD style.
 ### `GET /file.md`  |  `GET /folder/file.md`  
 Returns the file content.
 
-### `GET /file.md.json`  |  `GET /folder.json` | `GET /.json`  
+### `GET /file.md.json`  |  `GET /folder/.json` | `GET /.json`  
 Returns file/folder information rendered as JSON, along with history entries.
 
-### `GET /file.md.history/`  |  `GET /folder.history/`  
+### _not implemented_ `GET /file.md.history/`  |  `GET /folder.history/`  
 Returns index-of listing of file/folder history.
 
-### `GET /file.md.history/[12-]954abcf2` / `GET /folder.history/[12-]954abcf2/`  
+### _not implemented_ `GET /file.md.history/[12-]954abcf2` / `GET /folder.history/[12-]954abcf2/`  
 Returns file/folder contents at commit-id. The number in front is used for sorting and
 can be omitted.
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -8,23 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cbroglie/mustache"
 	"github.com/pkg/errors"
 
-	"github.com/cbroglie/mustache"
 	"github.com/cfstras/wiki-api/data"
 	"github.com/julienschmidt/httprouter"
 	git "github.com/libgit2/git2go"
 )
 
 var ErrorNotFound error = errors.New("Not Found")
-
-type GitEntry struct {
-	Name  string
-	ID    string
-	IsDir bool
-
-	Handle *git.TreeEntry
-}
 
 var (
 	TemplateIndexOf string
@@ -57,22 +50,34 @@ func Run(address, repoPath string, doDebug bool) error {
 }
 
 func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	ctx := &RequestContext{w: w}
 	defer HttpErrorOnPanic(w, http.StatusInternalServerError)
-	path := p.ByName("path")
+	ctx.path = p.ByName("path")
+
 	var err error
-	path, err = checkPath(path)
+	ctx.path, err = checkPath(ctx.path)
 	Check(err, "invalid path", http.StatusBadRequest)
 
-	if debug && strings.HasPrefix(path, "/debug/pprof/") {
+	if debug && strings.HasPrefix(ctx.path, "/debug/pprof/") {
 		pprof.Index(w, r)
 		return
 	}
 
-	tree, err := GetRootTree()
-	Check(err, "getting tree", 0)
-	defer tree.Free()
+	jsonInfo := strings.HasSuffix(ctx.path, ".json")
+	if jsonInfo {
+		ctx.path = strings.TrimSuffix(ctx.path, ".json")
+	}
 
-	entry, err := GetRepoPath(tree, path)
+	ctx.rootCommit, err = GetRootCommit()
+	Check(err, "getting commit", 0)
+	defer ctx.rootCommit.Free()
+	rootTreeO, err := ctx.rootCommit.Peel(git.ObjectTree)
+	Check(err, "getting tree", 0)
+	ctx.rootTree, err = rootTreeO.AsTree()
+	Check(err, "getting tree", 0)
+	defer ctx.rootTree.Free()
+
+	entry, err := GetRepoPath(ctx.rootTree, ctx.path)
 	if err != nil && err.(*git.GitError).Code == git.ErrNotFound {
 		http.NotFound(w, r)
 		return
@@ -81,8 +86,8 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 	switch entry.Type() {
 	case git.ObjectTree:
-		if !strings.HasSuffix(path, "/") {
-			http.Redirect(w, r, path+"/", http.StatusMovedPermanently)
+		if !strings.HasSuffix(ctx.path, "/") {
+			http.Redirect(w, r, ctx.path+"/", http.StatusMovedPermanently)
 			return
 		}
 
@@ -90,23 +95,135 @@ func Index(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		Check(err, "getting tree", 0)
 		files := ListDirCurrent(tree)
 
-		// we only want to do that for the output, not the json and stuff
-		if path != "/" {
-			files = append([]GitEntry{{IsDir: true, Name: ".."}}, files...)
+		if jsonInfo {
+			renderTreeJson(ctx, entry, files)
+		} else {
+			renderDirListing(ctx, files)
 		}
-		context := map[string]interface{}{"Files": files, "Path": path}
-		html, err := mustache.Render(TemplateIndexOf, context)
-		Check(err, "rendering template", 0)
-		w.Write([]byte(html))
-
 	case git.ObjectBlob:
-		blob, err := entry.AsBlob()
-		Check(err, "getting blob", 0)
-		w.Write(blob.Contents())
+		if jsonInfo {
+			renderJsonInfo(ctx, entry)
+		} else {
+			blob, err := entry.AsBlob()
+			Check(err, "getting blob", 0)
+			w.Write(blob.Contents())
+		}
 	default:
 		http.Error(w, "Unknown entry: "+entry.Type().String(),
 			http.StatusInternalServerError)
 	}
+}
+
+func renderDirListing(ctx *RequestContext, files []GitEntry) {
+	// Add top-level link, but only for the dir listing.
+	if ctx.path != "/" {
+		files = append([]GitEntry{{IsDir: true, Name: ".."}}, files...)
+	}
+	context := map[string]interface{}{"Files": files, "Path": ctx.path}
+	html, err := mustache.Render(TemplateIndexOf, context)
+	Check(err, "rendering template", 0)
+	ctx.w.Write([]byte(html))
+}
+
+func renderTreeJson(ctx *RequestContext, object *git.Object, files []GitEntry) {
+	commitInfos, err := getCommitInfos(ctx.rootCommit, object, ctx.path)
+	Check(err, "getting history", http.StatusInternalServerError)
+	info := TreeInfo{
+		FileInfo: FileInfo{
+			ID:   (*Oid)(object.Id()),
+			Path: ctx.path, History: commitInfos},
+		Files: files}
+
+	b, err := json.MarshalIndent(&info, "", "  ")
+	Check(err, "rendering JSON", http.StatusInternalServerError)
+	ctx.w.Write(b)
+}
+
+func renderJsonInfo(ctx *RequestContext, object *git.Object) {
+	commitInfos, err := getCommitInfos(ctx.rootCommit, object, ctx.path)
+	Check(err, "getting history", http.StatusInternalServerError)
+	info := FileInfo{
+		ID:   (*Oid)(object.Id()),
+		Path: ctx.path, History: commitInfos}
+
+	b, err := json.MarshalIndent(&info, "", "  ")
+	Check(err, "rendering JSON", http.StatusInternalServerError)
+	ctx.w.Write(b)
+}
+
+func getCommitInfos(parentCommit *git.Commit, object *git.Object, path string) ([]CommitInfo, error) {
+	// get commit info
+	walk, err := repo.Walk()
+	if err != nil {
+		return nil, err
+	}
+	defer walk.Free()
+	if err = walk.Push(parentCommit.Id()); err != nil {
+		return nil, err
+	}
+	walk.Sorting(git.SortTime | git.SortTopological)
+	walk.SimplifyFirstParent()
+	walk.Hide(object.Id())
+	walk.HideGlob("tags/*")
+
+	res := []CommitInfo{}
+	var currentCommitId git.Oid
+	var currentFileId *git.Oid
+	// walk backwards in history
+	for {
+		err = walk.Next(&currentCommitId)
+		if err != nil {
+			break
+		}
+
+		// get path at at that commit
+		currentCommit, err := repo.LookupCommit(&currentCommitId)
+		if err != nil {
+			return nil, err
+		}
+		currentTreeO, err := currentCommit.Peel(git.ObjectTree)
+		if err != nil {
+			return nil, err
+		}
+		currentTree, err := currentTreeO.AsTree()
+		if err != nil {
+			return nil, err
+		}
+
+		objectAtCommit, err := GetRepoPath(currentTree, path)
+		if err != nil && err.(*git.GitError).Code == git.ErrNotFound {
+			// file appeared the commit before
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if objectAtCommit == nil {
+			break
+		}
+		if currentFileId != nil && objectAtCommit.Id().Equal(currentFileId) {
+			// file did not change at that revision
+			continue
+		}
+		currentFileId = objectAtCommit.Id()
+		// if we arrive here, the file changed at this revision! mark it!
+
+		commit, err := repo.LookupCommit(&currentCommitId)
+		if err != nil {
+			return nil, err
+		}
+		info := CommitInfo{
+			(*Oid)(commit.Id()),
+			commit.Author().When,
+			strings.TrimSpace(commit.Message()),
+			AuthorInfo{commit.Author().Name, commit.Author().Email},
+		}
+		res = append(res, info)
+	}
+	if err != nil && err.(*git.GitError).Code != git.ErrIterOver {
+		return nil, err
+	}
+	return res, nil
 }
 
 // checkPath checks that a path makes sense.

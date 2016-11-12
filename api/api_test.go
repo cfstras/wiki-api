@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"archive/tar"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -86,8 +87,8 @@ func TestMain(m *testing.M) {
 }
 
 type testCase struct {
-	url, expected     string
-	transformResponse func(string) string
+	url, expected   string
+	compareResponse func(t *testing.T, expected, actual string)
 }
 
 // testRequest calls a URL and verifies the result matches what is expected.
@@ -101,14 +102,32 @@ func testRequest(t *testing.T, c testCase) {
 	assert.NoError(t, err)
 
 	body := string(bodyB)
-	if c.transformResponse != nil {
-		body = c.transformResponse(body)
+	if c.compareResponse != nil {
+		c.compareResponse(t, c.expected, body)
+	} else {
+		assert.Equal(t, c.expected, body)
 	}
-	assert.Equal(t, c.expected, body)
 }
 
 // TestGetFile verifies that files from the repository are correctly returned.
 func TestGetFile(t *testing.T) {
+	compareJson := func(t *testing.T, expected, actual string) {
+		var parsedExpected map[string]interface{}
+		if !assert.NoError(t, json.Unmarshal([]byte(expected), &parsedExpected),
+			"parsing expected json: "+expected) {
+			t.FailNow()
+		}
+
+		var parsedActual map[string]interface{}
+		if !assert.NoError(t, json.Unmarshal([]byte(actual), &parsedActual),
+			"parsing actual json: "+actual) {
+			t.FailNow()
+		}
+
+		assert.Equal(t, parsedExpected, parsedActual)
+	}
+	compareJson(t, "{}", "{}") // test compare function
+
 	cases := []testCase{
 		{url: "/main.md", expected: `# Main
 
@@ -121,6 +140,66 @@ Welcome to the best Wiki _ever_ to be created!
 		{url: "/foo/foo.txt", expected: "foo.txt\n"},
 		{url: "/foo/bar/a.md", expected: "foo/bar/a.md\n"},
 		{url: "/foo/bar/baz/boo/x.md", expected: "foo/bar/baz/boo/x.md\n"},
+
+		{url: "/foo/foo.txt.json", compareResponse: compareJson, expected: `
+{
+	"Path": "/foo/foo.txt",
+	"ID": "7c6ded14ecffa0341f8dc68fb674d4ae26d34644",
+	"History": [
+		{
+			"Date": "2016-10-19T23:08:01+02:00",
+			"CommitMsg": "revert everything",
+			"Author": {
+				"Name": "Claus Strasburger",
+				"Email": "claus@strasburger.de"
+			},
+			"ID": "663a51383fc6fc6052a2570b9aff4c90a035305c"
+		},
+		{
+			"ID": "2c35554157d56445d70ce121e4764f864a4c92bb",
+			"Date": "2016-10-19T23:07:04+02:00",
+			"CommitMsg": "move",
+			"Author": {
+				"Name": "Claus Strasburger",
+				"Email": "claus@strasburger.de"
+			}
+		},
+		{
+			"ID": "94b931b4ecb3f461304dbf7a751b0c12cffaa9bf",
+			"Date": "2016-10-19T23:04:32+02:00",
+			"CommitMsg": "rewrite",
+			"Author": {
+				"Name": "Claus Strasburger",
+				"Email": "claus@strasburger.de"
+			}
+		}
+	]
+}
+		`},
+		{url: "/foo/bar/baz/.json", compareResponse: compareJson, expected: `
+{
+	"Path": "/foo/bar/baz/",
+	"ID": "21be1b42bce2d050160f7a9b46ed8946de68e37e",
+	"History": [
+		{
+			"ID": "663a51383fc6fc6052a2570b9aff4c90a035305c",
+			"Date": "2016-10-19T23:08:01+02:00",
+			"CommitMsg": "revert everything",
+			"Author": {
+				"Name": "Claus Strasburger",
+				"Email": "claus@strasburger.de"
+			}
+		}
+	],
+	"Files": [
+		{
+			"Name": "boo",
+			"ID": "59f6de287017b034e5df4d1a5f4ad3986ad8d9c3",
+			"IsDir": true
+		}
+	]
+}
+`},
 	}
 
 	for _, c := range cases {
