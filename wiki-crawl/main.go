@@ -419,6 +419,12 @@ func (w *worker) processSite(s *Site) {
 		w.log.Println("  escaped url:", safeUrl)
 
 		filename := strings.TrimPrefix(parsedSiteUrl.EscapedPath(), data.RootUrl.EscapedPath())
+		filename, err = url.QueryUnescape(filename)
+		if err != nil {
+			w.log.Println("unescaping filename", filename, err)
+			w.doWaitStep()
+			return
+		}
 		filename += "/" + target
 		s.Filename = filename
 		w.download(s, false, safeUrl)
