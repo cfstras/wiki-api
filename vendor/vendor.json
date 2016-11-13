@@ -28,6 +28,12 @@
 			"revisionTime": "2016-09-25T22:06:09Z"
 		},
 		{
+			"checksumSHA1": "Xc0uvK8DeX2AEysOiNht4CwhZ8M=",
+			"path": "github.com/gizak/termui",
+			"revision": "cfe1ea3b97685430abe580d4ecd7a463d14397c0",
+			"revisionTime": "2016-11-11T04:25:53Z"
+		},
+		{
 			"checksumSHA1": "Drsz3oT4NmM2tVQCRk+occxVvPA=",
 			"path": "github.com/julienschmidt/httprouter",
 			"revision": "d8ff598a019f2c7bad0980917a588193cf26666e",
@@ -38,6 +44,30 @@
 			"path": "github.com/libgit2/git2go",
 			"revision": "e9668545c972870637b79670bcb532401353c3d6",
 			"revisionTime": "2016-10-03T09:53:29Z"
+		},
+		{
+			"checksumSHA1": "7hln62oZPZmyqEmgXaybf9WxQ7A=",
+			"path": "github.com/maruel/panicparse/stack",
+			"revision": "ad661195ed0e88491e0f14be6613304e3b1141d6",
+			"revisionTime": "2016-07-20T14:16:34Z"
+		},
+		{
+			"checksumSHA1": "C6roHifHhixFuo5e44QUdfah/pM=",
+			"path": "github.com/mattn/go-runewidth",
+			"revision": "5890272cd41c5103531cd7b79e428d99c9e97f76",
+			"revisionTime": "2015-05-27T10:19:16Z"
+		},
+		{
+			"checksumSHA1": "L3leymg2RT8hFl5uL+5KP/LpBkg=",
+			"path": "github.com/mitchellh/go-wordwrap",
+			"revision": "ad45545899c7b13c020ea92b2072220eefad42b8",
+			"revisionTime": "2015-03-14T17:03:34Z"
+		},
+		{
+			"checksumSHA1": "GfnLutGNzldtAL69vqyxFS6znmk=",
+			"path": "github.com/nsf/termbox-go",
+			"revision": "785b5546a97f27460cfbc4c77132a46b90beb834",
+			"revisionTime": "2015-07-09T07:41:12Z"
 		},
 		{
 			"checksumSHA1": "ynJSWoF6v+3zMnh9R0QmmG6iGV8=",
