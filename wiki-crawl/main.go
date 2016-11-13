@@ -420,14 +420,15 @@ func (w *worker) processSite(s *Site) {
 
 		filename := strings.TrimPrefix(parsedSiteUrl.EscapedPath(), data.RootUrl.EscapedPath())
 		filename += "/" + target
-		w.download(s, false, safeUrl, filename)
+		s.Filename = filename
+		w.download(s, false, safeUrl)
 	} else {
-		w.download(s, true, siteUrl+"?action=raw", s.Path)
+		s.Filename = s.Path
+		w.download(s, true, siteUrl+"?action=raw")
 	}
 }
 
-func (w *worker) download(s *Site, parse bool, downloadUrl, filename string) {
-	s.Filename = filename
+func (w *worker) download(s *Site, parse bool, downloadUrl string) {
 	req, err := http.NewRequest("GET", downloadUrl, nil)
 	if err != nil {
 		w.log.Println("  error:", err)
@@ -476,7 +477,7 @@ func (w *worker) download(s *Site, parse bool, downloadUrl, filename string) {
 	} else {
 		s.LastModified = time.Now()
 	}
-	fileSavePath := data.SavePath + ".d" + filename
+
 	if parse {
 		ext, err := w.getExt(resp.Header)
 		if err != nil {
@@ -484,8 +485,11 @@ func (w *worker) download(s *Site, parse bool, downloadUrl, filename string) {
 			s.Notes += err.Error() + "\n"
 			return
 		}
-		fileSavePath += ext
+		if !strings.HasSuffix(s.Filename, ext) {
+			s.Filename += ext
+		}
 	}
+	fileSavePath := data.SavePath + ".d/" + s.Filename
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
