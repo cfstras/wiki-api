@@ -1,0 +1,75 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "OfHbisNes0gI+S16gYBreh7Riv8=",
+			"path": "github.com/PuerkitoBio/goquery",
+			"revision": "152b1a2c8f5d0340f658bb656032a39b94e52958",
+			"revisionTime": "2016-08-31T16:22:11Z"
+		},
+		{
+			"checksumSHA1": "0cyj4kaj9Q0e9S55BPIr2zBuwvo=",
+			"path": "github.com/andybalholm/cascadia",
+			"revision": "65919c611220063037b1db8eb334acaf17a6d8ea",
+			"revisionTime": "2016-10-18T13:42:59Z"
+		},
+		{
+			"checksumSHA1": "7BvM+bn8B6KHoJMObZmyXbY5nD4=",
+			"path": "github.com/cbroglie/mustache",
+			"revision": "422aa0d3b491c9ab8f74578f7e0098373ff51ad0",
+			"revisionTime": "2016-07-11T04:02:33Z"
+		},
+		{
+			"checksumSHA1": "Lf3uUXTkKK5DJ37BxQvxO1Fq+K8=",
+			"origin": "github.com/stretchr/testify/vendor/github.com/davecgh/go-spew/spew",
+			"path": "github.com/davecgh/go-spew/spew",
+			"revision": "976c720a22c8eb4eb6a0b4348ad85ad12491a506",
+			"revisionTime": "2016-09-25T22:06:09Z"
+		},
+		{
+			"checksumSHA1": "Drsz3oT4NmM2tVQCRk+occxVvPA=",
+			"path": "github.com/julienschmidt/httprouter",
+			"revision": "d8ff598a019f2c7bad0980917a588193cf26666e",
+			"revisionTime": "2016-08-10T19:53:38Z"
+		},
+		{
+			"checksumSHA1": "1cIN02y+efh5pytFmlgYn7ZR43s=",
+			"path": "github.com/libgit2/git2go",
+			"revision": "e9668545c972870637b79670bcb532401353c3d6",
+			"revisionTime": "2016-10-03T09:53:29Z"
+		},
+		{
+			"checksumSHA1": "ynJSWoF6v+3zMnh9R0QmmG6iGV8=",
+			"path": "github.com/pkg/errors",
+			"revision": "839d9e913e063e28dfd0e6c7b7512793e0a48be9",
+			"revisionTime": "2016-10-02T05:25:12Z"
+		},
+		{
+			"checksumSHA1": "zKKp5SZ3d3ycKe4EKMNT0BqAWBw=",
+			"origin": "github.com/stretchr/testify/vendor/github.com/pmezard/go-difflib/difflib",
+			"path": "github.com/pmezard/go-difflib/difflib",
+			"revision": "976c720a22c8eb4eb6a0b4348ad85ad12491a506",
+			"revisionTime": "2016-09-25T22:06:09Z"
+		},
+		{
+			"checksumSHA1": "Q2V7Zs3diLmLfmfbiuLpSxETSuY=",
+			"path": "github.com/stretchr/testify/assert",
+			"revision": "976c720a22c8eb4eb6a0b4348ad85ad12491a506",
+			"revisionTime": "2016-09-25T22:06:09Z"
+		},
+		{
+			"checksumSHA1": "vqc3a+oTUGX8PmD0TS+qQ7gmN8I=",
+			"path": "golang.org/x/net/html",
+			"revision": "0e2717dc3cc05907dc23096ef3a9086ea93f567f",
+			"revisionTime": "2016-11-10T23:13:32Z"
+		},
+		{
+			"checksumSHA1": "00eQaGynDYrv3tL+C7l9xH0IDZg=",
+			"path": "golang.org/x/net/html/atom",
+			"revision": "0e2717dc3cc05907dc23096ef3a9086ea93f567f",
+			"revisionTime": "2016-11-10T23:13:32Z"
+		}
+	],
+	"rootPath": "github.com/cfstras/wiki-api"
+}
