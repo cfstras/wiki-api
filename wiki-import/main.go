@@ -25,7 +25,7 @@ import (
 
 type Site struct {
 	Path         string
-	Fetched      bool
+	Fetched      int
 	Size         int64
 	LastModified time.Time
 }
@@ -41,6 +41,10 @@ type worker struct {
 	quit chan bool
 	log  *log.Logger
 }
+
+const (
+	NUM_WORKERS = 3
+)
 
 var data Data
 
@@ -99,7 +103,7 @@ func main() {
 		}
 	}()
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < NUM_WORKERS; i++ {
 		quit := make(chan bool)
 		workers = append(workers, worker{num: i, quit: quit})
 		go workers[i].run()
@@ -111,6 +115,9 @@ func main() {
 		queueSize.Add(1)
 	}
 	for _, site := range data.Sites {
+		if site.Fetched > 20 {
+			continue
+		}
 		queue <- site
 		queueSize.Add(1)
 	}
@@ -182,6 +189,8 @@ func (w *worker) processSite(s *Site) {
 		w.log.Println("error fetching document", siteUrl, err)
 		return
 	}
+	goodLinks := 0
+	sitesAdded := 0
 	// get HTML, find links
 	d.Find("a,link").Each(func(i int, e *goquery.Selection) {
 		link, ok := e.Attr("href")
@@ -199,7 +208,7 @@ func (w *worker) processSite(s *Site) {
 		absolutePath := absoluteUrl.EscapedPath()
 		//w.log.Println("    escaped path:", absolutePath)
 
-		if !strings.HasPrefix(absoluteUrl.String(), rootUrl.String()) {
+		if !strings.HasPrefix(absoluteUrl.String(), rootUrl.String()+"/") {
 			//w.log.Println("    not wiki, ignoring.")
 			return
 		}
@@ -209,6 +218,7 @@ func (w *worker) processSite(s *Site) {
 			w.log.Println("    invalid unescape", absolutePath, err)
 			return
 		}
+		goodLinks++
 
 		sitesMutex.RLock()
 		if _, exists := data.Sites[absolutePath]; exists {
@@ -217,6 +227,7 @@ func (w *worker) processSite(s *Site) {
 		}
 		sitesMutex.RUnlock()
 		w.log.Println("    adding:", absolutePath)
+		sitesAdded++
 
 		sitesMutex.Lock()
 		site := &Site{Path: absolutePath}
@@ -229,35 +240,46 @@ func (w *worker) processSite(s *Site) {
 		}
 		sitesMutex.Unlock()
 	})
+	if (goodLinks > 3 || sitesAdded > 0) && s.Fetched < 20 {
+		select {
+		case queue <- s:
+			queueSize.Add(1)
+		default:
+			w.log.Println("not re-adding", s.Path, "to queue - full.")
+		}
+	}
 
 	// get raw
 	fileSavePath := data.SavePath + ".d" + s.Path + ".md"
 	w.log.Println("downloading", siteUrl)
 	resp, err := http.Get(siteUrl + "?action=raw")
 	if err != nil {
-		w.log.Println("error downloading:", err)
+		w.log.Println("  error:", err)
 		return
 	}
-	log.Println("  headers:", resp.Header)
-	//TODO check status code
+	w.log.Println("  headers:", resp.Header)
+	if resp.StatusCode != 200 {
+		w.log.Println("status:", resp.StatusCode, resp.Status)
+		return
+	}
 
 	err = os.MkdirAll(path.Dir(fileSavePath), 0755)
 	if err != nil {
-		w.log.Println("error creating dirs:", path.Dir(fileSavePath), err)
+		w.log.Println("  error creating dirs:", path.Dir(fileSavePath), err)
 		return
 	}
 	f, err := os.Create(fileSavePath)
 	if err != nil {
-		w.log.Println("error creating file:", fileSavePath, err)
+		w.log.Println("  error creating file:", fileSavePath, err)
 		return
 	}
 	size, err := io.Copy(f, resp.Body)
 	if err != nil {
-		w.log.Println("error writing file:", fileSavePath, err)
+		w.log.Println("  error writing file:", fileSavePath, err)
 		return
 	}
 	s.Size = size
-	s.Fetched = true
+	s.Fetched++
 
 	lastmod := resp.Header.Get("Last-Modified")
 	if lastmod != "" {
