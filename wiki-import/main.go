@@ -1,20 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"container/list"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"mime"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"regexp"
 	"strings"
 	"sync"
+
+	. "github.com/cfstras/wiki-api/types"
 
 	"github.com/PuerkitoBio/goquery"
 
@@ -24,28 +29,6 @@ import (
 
 	ui "github.com/gizak/termui"
 )
-
-type Site struct {
-	Path         string
-	Fetched      bool
-	Size         int64
-	LastModified time.Time
-	HasRandom    bool
-
-	Notes string
-
-	fetchedThisRun int
-}
-
-type Data struct {
-	RootUrl     string
-	Sites       map[string]*Site
-	SavePath    string
-	RandomSites map[string]bool
-
-	sitesAddedThisRound int
-	siteToken           chan bool
-}
 
 type worker struct {
 	num  int
@@ -66,14 +49,25 @@ var includeRegex = regexp.MustCompile(`<<Include\(([^>]+)\)>>`)
 
 var data Data
 
-var workers []worker
-var queue = make(chan *Site, 1024)
-var queueSize sync.WaitGroup
+var (
+	workers   []worker
+	queue     = make(chan *Site, 1024)
+	queueSize sync.WaitGroup
+	waitStep  = sync.NewCond(&sync.Mutex{})
+)
 
-var endChan = make(chan bool)
-var end = false
+var (
+	endChan = make(chan bool)
+	end     = false
+)
+
+var (
+	sitesAddedThisRound int
+	siteToken           chan bool
+)
 
 func main() {
+	var err error
 	defer func() {
 		if got := recover(); got != nil {
 			if err, ok := got.(error); ok {
@@ -84,9 +78,9 @@ func main() {
 		}
 	}()
 
-	var url, savePath string
+	var urlArg, savePath string
 	var debug bool
-	flag.StringVar(&url, "url", "", "Wiki Base URL")
+	flag.StringVar(&urlArg, "url", "", "Wiki Base URL")
 	flag.StringVar(&savePath, "save", "wiki.json", "specify a savefile to work with")
 	flag.BoolVar(&debug, "debug", false, "enable debug")
 	flag.Parse()
@@ -97,12 +91,30 @@ func main() {
 		}()
 	}
 
+	// load / parse root URL
+	loaded := load(savePath)
+	if urlArg == "" && !loaded {
+		log.Println("No URL specified and no savefile found.")
+		flag.Usage()
+		return
+	} else if urlArg != "" {
+		if strings.HasSuffix(urlArg, "/") {
+			urlArg = strings.TrimSuffix(urlArg, "/")
+		}
+		data.RootUrl, err = url.Parse(urlArg)
+		if err != nil {
+			log.Fatalln("parsing url", urlArg, err)
+		}
+	}
+
+	// make workers
 	for i := 0; i < NUM_WORKERS; i++ {
 		quit := make(chan bool)
 		workers = append(workers, worker{num: i, quit: quit})
 	}
 
-	err := ui.Init()
+	// init UI
+	err = ui.Init()
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -129,9 +141,21 @@ func main() {
 		workerRow)
 	ui.Body.Align()
 
+	signalChan := make(chan os.Signal)
+	signal.Notify(signalChan, os.Kill)
+	go func() {
+		for _ = range signalChan {
+			ui.Close()
+			os.Exit(1)
+		}
+	}()
+
 	stop := func(e ui.Event) {
-		log.Println("Got", e, "- exiting.")
+		log.Println("Got", e, "- stopping.")
 		endChan <- true
+	}
+	stopAndExit := func(e ui.Event) {
+		stop(e)
 		ui.StopLoop()
 	}
 	resize := func(ui.Event) {
@@ -143,28 +167,14 @@ func main() {
 		ui.Body.Align()
 		ui.Render(ui.Body)
 	}
-	ui.Handle("/sys/kbd/q", stop)
-	ui.Handle("/sys/kbd/C-c", stop)
+	ui.Handle("/sys/kbd/q", stopAndExit)
+	ui.Handle("/sys/kbd/C-c", stopAndExit)
 	ui.Handle("/sys/kbd/<escape>", stop)
 	ui.Handle("/sys/wnd/resize", resize)
-	go func() {
-		for {
-			ui.Render(ui.Body)
-			time.Sleep(50 * time.Millisecond)
-		}
-	}()
+	ui.Handle("/sys/kbd/<space>", func(ui.Event) {
+		waitStep.Signal()
+	})
 
-	loaded := load(savePath)
-	if url == "" && !loaded {
-		log.Println("No URL specified and no savefile found.")
-		flag.Usage()
-		return
-	} else if url != "" {
-		data.RootUrl = url
-	}
-	if strings.HasSuffix(data.RootUrl, "/") {
-		data.RootUrl = strings.TrimSuffix(data.RootUrl, "/")
-	}
 	data.SavePath = savePath
 	if data.Sites == nil {
 		data.Sites = map[string]*Site{}
@@ -172,16 +182,19 @@ func main() {
 	}
 	go func() {
 		for _ = range endChan {
-			end = true
-			for _, w := range workers {
-				w.quit <- true
+			if !end {
+				end = true
+				for _, w := range workers {
+					w.quit <- true
+					close(w.quit)
+				}
 			}
 			save(data.SavePath)
 		}
 	}()
 
-	data.siteToken = make(chan bool, 1)
-	data.siteToken <- true
+	siteToken = make(chan bool, 1)
+	siteToken <- true
 
 	for i := range workers {
 		go workers[i].run()
@@ -207,15 +220,15 @@ func work() {
 			return
 		}
 		log.Println("next round. Using", len(data.RandomSites), "sites with random.")
-		data.sitesAddedThisRound = 0
+		sitesAddedThisRound = 0
 		for i := 0; i <= 30; i++ {
 			for s := range data.RandomSites {
 				addSite(s, true)
 			}
 			queueSize.Wait()
 		}
-		log.Println("new sites found in round:", data.sitesAddedThisRound)
-		if data.sitesAddedThisRound == 0 {
+		log.Println("new sites found in round:", sitesAddedThisRound)
+		if sitesAddedThisRound == 0 {
 			log.Println("Exiting.")
 			break
 		}
@@ -224,15 +237,15 @@ func work() {
 }
 
 func addSite(path string, force bool) {
-	<-data.siteToken
-	defer func() { data.siteToken <- true }()
+	<-siteToken
+	defer func() { siteToken <- true }()
 	_, exists := data.Sites[path]
 	if exists && !force {
 		return
 	}
 	if !exists {
 		log.Println("    new link:", path)
-		data.sitesAddedThisRound++
+		sitesAddedThisRound++
 
 		site := &Site{Path: path}
 		data.Sites[path] = site
@@ -246,8 +259,8 @@ func addSite(path string, force bool) {
 }
 
 func addRandomSite(path string) {
-	<-data.siteToken
-	defer func() { data.siteToken <- true }()
+	<-siteToken
+	defer func() { siteToken <- true }()
 	if _, exists := data.RandomSites[path]; exists {
 		return
 	}
@@ -266,7 +279,7 @@ func (w *listWriter) Write(b []byte) (int, error) {
 	for e := w.buffer.Front(); e != nil; e = e.Next() {
 		w.Items = append(w.Items, e.Value.(string))
 	}
-	ui.Render()
+	ui.Render(ui.Body)
 	return len(b), nil
 }
 
@@ -315,9 +328,9 @@ func save(path string) bool {
 }
 
 func (w *worker) processSite(s *Site) {
-	rootUrl, _ := url.Parse(data.RootUrl)
+	s.Notes = ""
 
-	siteUrl := data.RootUrl + s.Path
+	siteUrl := data.RootUrl.String() + s.Path
 	w.log.Println("processing", siteUrl)
 
 	d, err := goquery.NewDocument(siteUrl)
@@ -331,39 +344,94 @@ func (w *worker) processSite(s *Site) {
 		if !ok {
 			return
 		}
-		//w.log.Println("  found link", link)
+		debug := false
+		if debug {
+			w.log.Println("  found link", link)
+		}
 		relativeUrl, err := url.Parse(link)
 		if err != nil {
 			w.log.Println("    invalid url", link, err)
 			return
 		}
-		absoluteUrl := rootUrl.ResolveReference(relativeUrl)
-		//w.log.Println("    absolute link:", absoluteUrl)
-		absolutePath := absoluteUrl.EscapedPath()
-		//w.log.Println("    escaped path:", absolutePath)
+		absoluteUrl := data.RootUrl.ResolveReference(relativeUrl)
+		if debug {
+			w.log.Println("    absolute link:", absoluteUrl)
+		}
+		action := absoluteUrl.Query().Get("action")
+		var absolutePath string
+		if action == "AttachFile" {
+			q := absoluteUrl.Query()
+			q.Set("do", "get")
+			// delete unwanted query params
+			for key := range q {
+				if key != "do" && key != "action" && key != "target" {
+					delete(q, key)
+				}
+			}
+			absoluteUrl.RawQuery = q.Encode()
+			target := absoluteUrl.Query().Get("target")
+			if target == "" {
+				return
+			}
+			absolutePath = absoluteUrl.RequestURI()
+		} else {
+			absolutePath = absoluteUrl.EscapedPath()
+			if debug {
+				w.log.Println("    escaped path:", absolutePath)
+			}
+		}
 
-		if !strings.HasPrefix(absoluteUrl.String(), rootUrl.String()+"/") {
-			//w.log.Println("    not wiki, ignoring.")
+		if !strings.HasPrefix(absoluteUrl.String(), data.RootUrl.String()+"/") {
+			if debug {
+				w.log.Println("    not wiki, ignoring.")
+			}
 			return
 		}
-		absolutePath = strings.TrimPrefix(absolutePath, "/wiki")
+		absolutePath = strings.TrimPrefix(absolutePath, data.RootUrl.EscapedPath())
 		absolutePath, err = url.QueryUnescape(absolutePath)
 		if err != nil {
 			w.log.Println("    invalid unescape", absolutePath, err)
 			return
 		}
 
+		if debug {
+			w.log.Println("    resolved to", absolutePath)
+			w.doWaitStep()
+		}
 		addSite(absolutePath, false)
 	})
-	s.fetchedThisRun++
 
 	// get raw
-	fileSavePath := data.SavePath + ".d" + s.Path + ".md"
 	w.log.Println("downloading", siteUrl)
 
-	req, err := http.NewRequest("GET", siteUrl+"?action=raw", nil)
+	parsedSiteUrl, err := url.Parse(siteUrl)
+	if err != nil {
+		w.log.Println("  invalid url", siteUrl, err)
+		return
+	}
+	action := parsedSiteUrl.Query().Get("action")
+	if action == "AttachFile" {
+		w.log.Println("  as file.")
+		target := parsedSiteUrl.Query().Get("target")
+		safeUrl := parsedSiteUrl.Scheme + "://" + parsedSiteUrl.Host + "/" +
+			parsedSiteUrl.Path + "?" +
+			strings.Replace(parsedSiteUrl.RawQuery, " ", "%20", -1)
+		w.log.Println("  escaped url:", safeUrl)
+
+		filename := strings.TrimPrefix(parsedSiteUrl.EscapedPath(), data.RootUrl.EscapedPath())
+		filename += "/" + target
+		w.download(s, false, safeUrl, filename)
+	} else {
+		w.download(s, true, siteUrl+"?action=raw", s.Path)
+	}
+}
+
+func (w *worker) download(s *Site, parse bool, downloadUrl, filename string) {
+	s.Filename = filename
+	req, err := http.NewRequest("GET", downloadUrl, nil)
 	if err != nil {
 		w.log.Println("  error:", err)
+		w.doWaitStep()
 		return
 	}
 	if !s.LastModified.IsZero() {
@@ -372,45 +440,21 @@ func (w *worker) processSite(s *Site) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		w.log.Println("  error:", err)
+		w.doWaitStep()
 		return
 	}
-	//w.log.Println("  headers:", resp.Header)
+	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
+		s.Notes += resp.Status + "\n"
 		return
 	}
 	if resp.StatusCode != 200 {
+		w.log.Println("req:", downloadUrl)
 		w.log.Println("status:", resp.StatusCode, resp.Status)
-		time.Sleep(10 * time.Second)
+		s.Notes += resp.Status + "\n"
+		w.doWaitStep()
 		return
 	}
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		w.log.Println("  error reading response:", err)
-		return
-	}
-	s.Size = int64(len(b))
-	err = os.MkdirAll(path.Dir(fileSavePath), 0755)
-	if err != nil {
-		w.log.Println("  error creating dirs:", path.Dir(fileSavePath), err)
-		return
-	}
-	err = ioutil.WriteFile(fileSavePath, b, 0644)
-	if err != nil {
-		w.log.Println("  error writing file:", fileSavePath, err)
-		return
-	}
-	w.log.Println("  wrote", s.Size, "bytes to", fileSavePath)
-
-	bStr := string(b)
-	if strings.Contains(bStr, "<<RandomPage") {
-		s.HasRandom = true
-		addRandomSite(s.Path)
-	}
-	matches := includeRegex.FindAllStringSubmatch(bStr, -1)
-	for _, match := range matches {
-		addSite("/"+match[1], false)
-	}
-
 	dateS := ""
 	if resp.Header.Get("Last-Modified") != "" {
 		dateS = resp.Header.Get("Last-Modified")
@@ -418,12 +462,95 @@ func (w *worker) processSite(s *Site) {
 		dateS = resp.Header.Get("Date")
 	}
 	if dateS != "" {
-		s.LastModified, err = time.Parse(time.RFC1123, dateS)
+		newDate, err := time.Parse(time.RFC1123, dateS)
 		if err != nil {
 			w.log.Println("error parsing last-modified:", err)
-			s.LastModified = time.Now()
+			newDate = time.Now()
 		}
+		w.log.Println("  lastmod:", newDate, "- we have", s.LastModified)
+		if !newDate.After(s.LastModified) {
+			w.log.Println("    skipping download")
+			return
+		}
+		s.LastModified = newDate
 	} else {
 		s.LastModified = time.Now()
 	}
+	fileSavePath := data.SavePath + ".d" + filename
+	if parse {
+		ext, err := w.getExt(resp.Header)
+		if err != nil {
+			w.log.Println("  could not get extensions", err)
+			s.Notes += err.Error() + "\n"
+			return
+		}
+		fileSavePath += ext
+	}
+
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		w.log.Println("  error reading response:", err)
+		w.doWaitStep()
+		return
+	}
+	s.Size = int64(len(b))
+	err = os.MkdirAll(path.Dir(fileSavePath), 0755)
+	if err != nil {
+		w.log.Println("  error creating dirs:", path.Dir(fileSavePath), err)
+		w.doWaitStep()
+		return
+	}
+	err = ioutil.WriteFile(fileSavePath, b, 0644)
+	if err != nil {
+		w.log.Println("  error writing file:", fileSavePath, err)
+		w.doWaitStep()
+		return
+	}
+	w.log.Println("  wrote", s.Size, "bytes to", fileSavePath)
+
+	if parse {
+		bStr := string(b)
+		if strings.Contains(bStr, "<<RandomPage") {
+			s.HasRandom = true
+			addRandomSite(s.Path)
+		}
+		matches := includeRegex.FindAllStringSubmatch(bStr, -1)
+		for _, match := range matches {
+			addSite("/"+match[1], false)
+		}
+	}
+
+	buf := &bytes.Buffer{}
+	resp.Header.Write(buf)
+	s.Notes += buf.String() + "\n"
+}
+
+var mtypes = map[string]string{
+	"text/plain":      ".txt",
+	"image/png":       ".png",
+	"image/jpeg":      ".jpeg",
+	"image/gif":       ".gif",
+	"application/pdf": ".pdf",
+}
+
+func (w *worker) getExt(header http.Header) (string, error) {
+	contentType := header.Get("Content-Type")
+	mtype, _, err := mime.ParseMediaType(contentType)
+	if err == nil {
+		if e, ok := mtypes[mtype]; ok {
+			return e, nil
+		}
+	} else {
+		return "", err
+	}
+	w.log.Println("unknown mimetype", mtype)
+	w.doWaitStep()
+	return "", errors.New("unknown mimetype " + mtype)
+}
+
+func (w *worker) doWaitStep() {
+	w.log.Println("      <space>")
+	waitStep.L.Lock()
+	waitStep.Wait()
+	waitStep.L.Unlock()
 }
