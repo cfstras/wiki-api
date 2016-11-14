@@ -2,3 +2,4 @@ wiki-api
 build
 _make_*
 fd*
+.make_*
