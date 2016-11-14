@@ -1,4 +1,4 @@
-# wiki-api
+# wiki-api [![Build Status](https://travis-ci.org/cfstras/wiki-api.svg?branch=master)](https://travis-ci.org/cfstras/wiki-api)
 `TODO: find a better name.`
 
 This is a prototype backend to a new wiki built for flipdot.
