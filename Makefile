@@ -1,4 +1,4 @@
-.PHONY: build all stop docker_image run deps download
+.PHONY: build all stop docker_image run deps generate
 all: test build stop
 
 docker_image: .make_docker_image
@@ -7,7 +7,7 @@ run: .make_run
 
 deps: .make_deps
 
-download: .make_download
+generate: .make_generate
 
 .make_docker_image: docker/Dockerfile
 	@rm .make_docker_image || :
@@ -30,23 +30,31 @@ CMD=sudo docker exec -it $$(cat .make_run) bash -l -e -c
 	go get -v github.com/jteeuwen/go-bindata/...'
 	@touch .make_deps
 
-.make_download: .make_deps
-	@rm .make_download || :
+.make_generate: .make_deps $(shell find . -type f -name "*.go") $(shell find data/ -type f)
 	${CMD} 'cd /root/gopath/src/github.com/cfstras/wiki-api && \
-	go generate -v $$(go list ./... | grep -v /vendor/) && \
-	go get -d -t -v $$(go list ./... | grep -v /vendor/)'
-	@touch .make_download
+	go generate -v $$(go list ./... | grep -v /vendor/)'
 
-test: .make_download
+test: .make_generate
 	${CMD} 'cd /root/gopath/src/github.com/cfstras/wiki-api && \
 	go test -v $$(go list ./... | grep -v /vendor/) '
 	sudo chown -R $$USER .
 
-build: .make_download
+build: build/wiki-api.x64 build/wiki-crawl.x64
+
+.PHONY: build/wiki-api.x64
+build/wiki-api.x64: .make_generate
 	${CMD} 'cd /root/gopath/src/github.com/cfstras/wiki-api && \
 	mkdir -p build && \
 	go build -v -o build/wiki-api.x64 \
 		--ldflags "-extldflags \"-static $$CGO_LDFLAGS\""'
+	sudo chown -R $$USER .
+
+.PHONY: build/wiki-crawl.x64
+build/wiki-crawl.x64: .make_generate
+	${CMD} 'cd /root/gopath/src/github.com/cfstras/wiki-api/ && \
+	mkdir -p build && \
+	go build -v -o build/wiki-crawl.x64 \
+		--ldflags "-extldflags \"-static $$CGO_LDFLAGS\"" ./wiki-crawl'
 	sudo chown -R $$USER .
 
 stop: .make_run
