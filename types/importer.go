@@ -26,10 +26,11 @@ type Site struct {
 	Notes string
 }
 type Revision struct {
-	Author  string
-	Message string
-	Date    time.Time
-	Size    int64
+	Revision int
+	Author   string
+	Message  string
+	Date     time.Time
+	Size     int64
 }
 
 // SiteKey is a unique identifier for a site.

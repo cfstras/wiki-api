@@ -398,8 +398,8 @@ func (w *worker) processSite(s *Site) {
 		w.log.Println(err)
 	}
 
-	for rev := 1; rev <= s.HighestRevision; rev++ {
-		savePath := s.FileSavePath(rev, data)
+	for _, rev := range s.Revisions {
+		savePath := s.FileSavePath(rev.Revision, data)
 		if _, err := os.Stat(savePath); os.IsNotExist(err) {
 			w.log.Println("downloading", siteUrl, rev)
 			w.download(s, rev)
@@ -495,7 +495,7 @@ func (w worker) fetchHighestRevision(s *Site) error {
 		if _, ok := s.Revisions[rev]; ok {
 			return
 		}
-		s.Revisions[rev] = &Revision{}
+		s.Revisions[rev] = &Revision{Revision: rev}
 
 		col1 := el.Find(".column1")
 		if col1.Length() > 0 {
@@ -523,8 +523,8 @@ func (w worker) fetchHighestRevision(s *Site) error {
 	return nil
 }
 
-func (w *worker) download(s *Site, revision int) {
-	downloadUrl := fmt.Sprint(s.Key.RequestUrl(data), "&rev=", revision)
+func (w *worker) download(s *Site, revision *Revision) {
+	downloadUrl := fmt.Sprint(s.Key.RequestUrl(data), "&rev=", revision.Revision)
 	w.log.Println("  escaped url: ", downloadUrl)
 
 	req, err := http.NewRequest("GET", downloadUrl, nil)
@@ -561,10 +561,10 @@ func (w *worker) download(s *Site, revision int) {
 			w.doWaitStep()
 			newDate = time.Now()
 		}
-		s.Revisions[revision].Date = newDate
+		revision.Date = newDate
 	}
 
-	fileSavePath := s.FileSavePath(revision, data)
+	fileSavePath := s.FileSavePath(revision.Revision, data)
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -572,7 +572,7 @@ func (w *worker) download(s *Site, revision int) {
 		w.doWaitStep()
 		return
 	}
-	s.Revisions[revision].Size = int64(len(b))
+	revision.Size = int64(len(b))
 	err = os.MkdirAll(path.Dir(fileSavePath), 0755)
 	if err != nil {
 		w.log.Println("  error creating dirs:", path.Dir(fileSavePath), err)
