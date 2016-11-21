@@ -68,21 +68,24 @@ var (
 	siteToken           chan bool
 )
 
+func panicrecover() {
+	if uiIsInit {
+		ui.Close()
+		uiIsInit = false
+	}
+	if got := recover(); got != nil {
+		if err, ok := got.(error); ok {
+			fmt.Printf("%+v\n", errors.WithStack(err))
+		} else {
+			fmt.Printf("%+v\n", errors.WithStack(errors.New(fmt.Sprint(got))))
+		}
+		os.Exit(1)
+	}
+}
+
 func main() {
 	var err error
-	defer func() {
-		if uiIsInit {
-			ui.Close()
-			uiIsInit = false
-		}
-		if got := recover(); got != nil {
-			if err, ok := got.(error); ok {
-				log.Printf("%+v", errors.WithStack(err))
-			} else {
-				log.Printf("%+v", errors.WithStack(errors.New(fmt.Sprint(got))))
-			}
-		}
-	}()
+	defer panicrecover()
 
 	var urlArg, savePath string
 	var debug bool
@@ -198,11 +201,11 @@ func main() {
 			save(data.SavePath)
 		}
 	}(time.Tick(10 * time.Second))
-	go func(ch <-chan time.Time) {
+	/*go func(ch <-chan time.Time) {
 		for _ = range ch {
 			ui.Render(ui.Body)
 		}
-	}(time.Tick(100 * time.Millisecond))
+	}(time.Tick(100 * time.Millisecond))*/
 
 	data.SavePath = savePath
 	if data.Sites == nil {
@@ -273,7 +276,7 @@ func work() {
 }
 
 func addSite(siteKey SiteKey, force bool) {
-	site := &Site{Key: siteKey}
+	site := &Site{Key: siteKey, Revisions: map[int]*Revision{}}
 	if _, err := url.Parse(site.Key.SiteUrl(data)); err != nil {
 		log.Println("invalid url", site.Key.SiteUrl(data), err)
 		return
@@ -325,6 +328,7 @@ func (w *listWriter) Write(b []byte) (int, error) {
 }
 
 func (w *worker) run() {
+	defer panicrecover()
 	w.log = log.New(w.out, "", 0)
 	w.log.Println("Worker", w.num, "started")
 	for {
@@ -471,23 +475,51 @@ func (w *worker) parseAndAddLink(i int, e *goquery.Selection) {
 }
 
 func (w worker) fetchHighestRevision(s *Site) error {
-	d, err := goquery.NewDocument(data.RootUrl.String() + s.Key.Path + "?action=info&max_count=100")
+	d, err := goquery.NewDocument(data.RootUrl.String() + s.Key.Path + "?action=info&max_count=9999")
 	if err != nil {
 		w.log.Println(err)
 		w.doWaitStep()
 		return errors.Wrap(err, "error fetching history "+s.Key.Path)
 	}
+	w.log.Println("fetched history", s.Key.Path+"?action=info&max_count=9999")
 	// get HTML, find revisions
-	rev := 1
-	d.Find("td.column0").Each(func(_ int, el *goquery.Selection) {
-		i, err := strconv.ParseInt(el.Text(), 10, 64)
-		if err == nil && int(i) > rev {
-			rev = int(i)
+	s.HighestRevision = 1
+	d.Find("tr").Each(func(_ int, el *goquery.Selection) {
+		i, err := strconv.ParseInt(el.Find(".column0").First().Text(), 10, 64)
+		rev := int(i)
+		if err == nil && int(i) > s.HighestRevision {
+			s.HighestRevision = rev
+		} else if err != nil {
+			return
+		}
+		if _, ok := s.Revisions[rev]; ok {
+			return
+		}
+		s.Revisions[rev] = &Revision{}
+
+		col1 := el.Find(".column1")
+		if col1.Length() > 0 {
+			s.Revisions[rev].Date, _ = time.Parse("2006-01-02 15:04:05", col1.Text())
+		}
+		col3 := el.Find(".column3")
+		if col3.Length() > 0 {
+			s.Revisions[rev].Size, _ = strconv.ParseInt(col3.Text(), 10, 64)
+		}
+		col4 := el.Find(".column4 span a")
+		if col4.Length() > 0 {
+			s.Revisions[rev].Author = col4.Text()
+		} else {
+			w.log.Println(goquery.OuterHtml(el.Find(".column4")))
+			w.log.Println(goquery.OuterHtml(el.Find(".column4 span")))
+			w.log.Println(goquery.OuterHtml(el.Find(".column4 span a")))
+			//w.doWaitStep()
+		}
+		col5 := el.Find(".column5")
+		if col5.Length() > 0 {
+			s.Revisions[rev].Message = col5.Text()
 		}
 	})
-	w.log.Println("highest revision:", rev)
 
-	s.HighestRevision = rev
 	return nil
 }
 
@@ -521,34 +553,17 @@ func (w *worker) download(s *Site, revision int) {
 		return
 	}
 	dateS := ""
-	if resp.Header.Get("Last-Modified") != "" {
+	if s.Key.IsAttachment && resp.Header.Get("Last-Modified") != "" {
 		dateS = resp.Header.Get("Last-Modified")
-	} else if resp.Header.Get("Date") != "" {
-		dateS = resp.Header.Get("Date")
-	}
-	if dateS != "" {
 		newDate, err := time.Parse(time.RFC1123, dateS)
 		if err != nil {
 			w.log.Println("error parsing last-modified:", err)
+			w.doWaitStep()
 			newDate = time.Now()
 		}
-		s.LastModified = newDate
-	} else {
-		s.LastModified = time.Now()
+		s.Revisions[revision].Date = newDate
 	}
 
-	/*if !s.Key.IsAttachment {
-		mime, ext, err := w.getMimeAndExt(resp.Header)
-		if err != nil {
-			w.log.Println("  could not get extensions", err)
-			s.Notes += err.Error() + "\n"
-			return
-		}
-		if !strings.HasSuffix(s.Key.Path, ext) {
-			s.Extension = ext
-		}
-		s.MimeType = mime
-	}*/
 	fileSavePath := s.FileSavePath(revision, data)
 
 	b, err := ioutil.ReadAll(resp.Body)
@@ -557,7 +572,7 @@ func (w *worker) download(s *Site, revision int) {
 		w.doWaitStep()
 		return
 	}
-	s.Size = int64(len(b))
+	s.Revisions[revision].Size = int64(len(b))
 	err = os.MkdirAll(path.Dir(fileSavePath), 0755)
 	if err != nil {
 		w.log.Println("  error creating dirs:", path.Dir(fileSavePath), err)
@@ -570,7 +585,7 @@ func (w *worker) download(s *Site, revision int) {
 		w.doWaitStep()
 		return
 	}
-	w.log.Println("  wrote", s.Size, "bytes to", fileSavePath)
+	w.log.Println("  wrote", len(b), "bytes to", fileSavePath)
 
 	if !s.Key.IsAttachment {
 		bStr := string(b)

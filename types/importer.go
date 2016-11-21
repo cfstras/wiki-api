@@ -18,13 +18,18 @@ type Site struct {
 	//Extension       string
 	MimeType        string
 	HighestRevision int
-	Size            int64
-	LastModified    time.Time
 	// HasRandom is true when there's a listing of random sites on the page.
 	// Used to find unlinked pages.
 	HasRandom bool
+	Revisions map[int]*Revision
 
 	Notes string
+}
+type Revision struct {
+	Author  string
+	Message string
+	Date    time.Time
+	Size    int64
 }
 
 // SiteKey is a unique identifier for a site.
