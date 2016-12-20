@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/pprof"
 	"strings"
@@ -39,11 +41,12 @@ func Run(address, repoPath string, doDebug bool) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("repo:%+v\n", repo)
 
 	router := httprouter.New()
 
 	router.GET("/*path", Index)
-	router.PUT("/*path", PutFile)
+	router.PUT("/*path", putFileHandler)
 
 	fmt.Println("Listening on", address)
 	return http.ListenAndServe(address, router)
@@ -241,7 +244,7 @@ func checkPath(path string) (string, error) {
 	return path, nil
 }
 
-func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func putFileHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	defer HttpErrorOnPanic(w, http.StatusInternalServerError)
 	var err error
 
@@ -252,67 +255,76 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	lastId := r.Header.Get("Wiki-Last-Id")
 	commitMsg := r.Header.Get("Wiki-Commit-Msg")
 
+	err, code := PutFile(path, lastId, commitMsg, r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), code)
+	}
+}
+
+func PutFile(path, lastId, commitMsg string, body io.Reader) (error, int) {
 	if strings.HasSuffix(path, ".json") {
-		http.Error(w, "Files cannot end in \".json\".", http.StatusConflict)
-		return
+		return errors.New("Files cannot end in \".json\"."), http.StatusConflict
 	}
 
-	head, err := repo.Head()
-	Check(err, "getting HEAD", 0)
-	headCommitObject, err := head.Peel(git.ObjectCommit)
-	Check(err, "getting HEAD", 0)
-	headCommit, err := headCommitObject.AsCommit()
-	Check(err, "getting HEAD", 0)
+	var headCommits []*git.Commit
+	var oldRootTree *git.Tree
+	if head, err := repo.Head(); err == nil {
+		headCommitObject, err := head.Peel(git.ObjectCommit)
+		Check(err, "getting HEAD", 0)
+		headCommit, err := headCommitObject.AsCommit()
+		Check(err, "getting HEAD", 0)
+		headCommits = append(headCommits, headCommit)
 
-	oldRootTree, err := GetTreeFromRef(head)
-	Check(err, "getting HEAD tree", 0)
-	defer oldRootTree.Free()
+		oldRootTree, err = GetTreeFromRef(head)
+		Check(err, "getting HEAD tree", 0)
+		defer oldRootTree.Free()
 
-	oldEntry, err := GetRepoPath(oldRootTree, path)
-	if err != nil && err.(*git.GitError).Code == git.ErrNotFound {
-		oldEntry = nil
-	} else if err != nil {
-		http.Error(w, "Could not get path: "+err.Error(), 0)
-		return
-	}
+		oldEntry, err := GetRepoPath(oldRootTree, path)
+		if err != nil && err.(*git.GitError).Code == git.ErrNotFound {
+			oldEntry = nil
+		} else if err != nil {
+			return errors.New("Could not get path: " + err.Error()), 0
+		}
 
-	if oldEntry != nil {
-		switch oldEntry.Type() {
-		case git.ObjectTree:
-			http.Error(w, "Specified path exists and is a directory.",
-				http.StatusConflict)
-			return
-		case git.ObjectBlob:
-			switch lastId {
-			case "":
-				// no checks to perform
-			case "null":
-				http.Error(w, "lastId was null but specified path exists.",
-					http.StatusConflict)
-				return
-			default:
-				if lastId != oldEntry.Id().String() {
-					http.Error(w, "lastId did not match existing entry.",
-						http.StatusConflict)
-					return
+		if oldEntry != nil {
+			switch oldEntry.Type() {
+			case git.ObjectTree:
+				return errors.New("Specified path exists and is a directory."),
+					http.StatusConflict
+
+			case git.ObjectBlob:
+				switch lastId {
+				case "":
+					// no checks to perform
+				case "null":
+					return errors.New("lastId was null but specified path exists."),
+						http.StatusConflict
+				default:
+					if lastId != oldEntry.Id().String() {
+						return errors.New("lastId did not match existing entry."),
+							http.StatusConflict
+					}
 				}
+			default:
+				return errors.New("Unknown old entry: " + oldEntry.Type().String()), 0
 			}
-		default:
-			http.Error(w, "Unknown old entry: "+oldEntry.Type().String(), 0)
-			return
+		} else {
+			if lastId != "" && lastId != "null" {
+				return errors.New("lastId specified but specified path does not exist."),
+					http.StatusGone
+			}
 		}
 	} else {
 		if lastId != "" && lastId != "null" {
-			http.Error(w, "lastId specified but specified path does not exist.",
-				http.StatusGone)
-			return
+			return errors.New("lastId specified but no commit exists."),
+				http.StatusGone
 		}
 	}
 	// all checks okay, add, lock, and commit!
 
 	//TODO lock
 
-	content, err := ioutil.ReadAll(r.Body)
+	content, err := ioutil.ReadAll(body)
 	Check(err, "receiving request", 0)
 	blobId, err := repo.CreateBlobFromBuffer(content)
 	Check(err, "writing request blob", 0)
@@ -320,7 +332,9 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 	index, err := git.NewIndex()
 	Check(err, "creating index", 0)
-	Check(index.ReadTree(oldRootTree), "Adding old files to index", 0)
+	if oldRootTree != nil {
+		Check(index.ReadTree(oldRootTree), "Adding old files to index", 0)
+	}
 
 	entry := git.IndexEntry{
 		Mode: git.FilemodeBlob,
@@ -341,8 +355,7 @@ func PutFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	committer := author
 
 	commitId, err := repo.CreateCommit("HEAD", author, committer, commitMsg, tree,
-		headCommit)
+		headCommits...)
 	Check(err, "creating commit", 0)
-	fmt.Fprintln(w, commitId)
-	return
+	return errors.New(commitId.String()), http.StatusOK
 }

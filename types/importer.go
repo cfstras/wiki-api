@@ -49,7 +49,7 @@ func (s SiteKey) MarshalText() (text []byte, err error) {
 
 // UnmarshalText parses 'path\nIsAttachment', so that we can use
 // it as a map key
-func (s SiteKey) UnmarshalText(text []byte) error {
+func (s *SiteKey) UnmarshalText(text []byte) error {
 	split := strings.SplitN(string(text), "\n", 2)
 	s.Path = split[0]
 	if len(split) < 2 {
@@ -72,7 +72,7 @@ func (s SiteKey) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON unmarshals this SiteKey from a JSON object, so that we
 // get the expected value when using it as a value
-func (s SiteKey) UnmarshalJSON(data []byte) error {
+func (s *SiteKey) UnmarshalJSON(data []byte) error {
 	if bytes.HasPrefix(data, []byte{'"'}) {
 		// note even the map key sometimes uses this method... which makes NO sense...
 		// so work around.
@@ -87,7 +87,10 @@ func (s SiteKey) UnmarshalJSON(data []byte) error {
 		Path         string
 		IsAttachment bool
 	}{s.Path, s.IsAttachment}
-	return json.Unmarshal(data, &s2)
+	err := json.Unmarshal(data, &s2)
+	s.Path = s2.Path
+	s.IsAttachment = s2.IsAttachment
+	return err
 }
 
 type Data struct {
@@ -123,7 +126,7 @@ func (s SiteKey) RequestUrl(d Data) string {
 	return safeUrl
 }
 
-func (s Site) FileSavePath(revision int, d Data) string {
+func (s Site) FileSavePath(revision int, d *Data) string {
 	path := s.Key.Path
 	if path == "/" || path == "" {
 		path = "index"

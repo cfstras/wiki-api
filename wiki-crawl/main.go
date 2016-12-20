@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"container/list"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -102,7 +101,7 @@ func main() {
 	fmt.Println("args parsed")
 
 	// load / parse root URL
-	loaded := load(savePath)
+	loaded := LoadData(savePath, &data)
 	if urlArg == "" && !loaded {
 		log.Println("No URL specified and no savefile found.")
 		flag.Usage()
@@ -198,7 +197,11 @@ func main() {
 	go func(ch <-chan time.Time) {
 		for _ = range ch {
 			log.Println("queue has", len(queue), "elements, saving")
-			save(data.SavePath)
+			<-siteToken
+			if err := SaveData(data.SavePath, &data); err != nil {
+				log.Println("error creating savefile:", err)
+			}
+			siteToken <- true
 		}
 	}(time.Tick(10 * time.Second))
 	/*go func(ch <-chan time.Time) {
@@ -221,7 +224,7 @@ func main() {
 					close(w.quit)
 				}
 			}
-			save(data.SavePath)
+			SaveData(data.SavePath, &data)
 		}
 	}()
 
@@ -343,44 +346,6 @@ func (w *worker) run() {
 	}
 }
 
-func load(path string) bool {
-	path += ".json"
-	fmt.Println("loading savefile.")
-	b, err := ioutil.ReadFile(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	if err != nil {
-		panic(errors.WithMessage(err, "loading savefile"))
-	}
-	fmt.Println("parsing savefile")
-	err = json.Unmarshal(b, &data)
-	if err != nil {
-		panic(errors.WithMessage(err, "parsing savefile"))
-	}
-	fmt.Println("loaded.")
-	return true
-}
-func save(path string) bool {
-	<-siteToken
-
-	path += ".json"
-	log.Println("saving metadata to", path)
-	b, err := json.MarshalIndent(&data, "", "  ")
-	siteToken <- true
-	if err != nil {
-		log.Println("error creating savefile:", err)
-		return false
-	}
-	err = ioutil.WriteFile(path, b, 0644)
-	if err != nil {
-		log.Println("error writing savefile:", err)
-		return false
-	}
-	log.Println("done.")
-	return true
-}
-
 func (w *worker) processSite(s *Site) {
 	s.Notes = ""
 
@@ -399,7 +364,7 @@ func (w *worker) processSite(s *Site) {
 	}
 
 	for _, rev := range s.Revisions {
-		savePath := s.FileSavePath(rev.Revision, data)
+		savePath := s.FileSavePath(rev.Revision, &data)
 		if _, err := os.Stat(savePath); os.IsNotExist(err) {
 			w.log.Println("downloading", siteUrl, rev)
 			w.download(s, rev)
@@ -564,7 +529,7 @@ func (w *worker) download(s *Site, revision *Revision) {
 		revision.Date = newDate
 	}
 
-	fileSavePath := s.FileSavePath(revision.Revision, data)
+	fileSavePath := s.FileSavePath(revision.Revision, &data)
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
